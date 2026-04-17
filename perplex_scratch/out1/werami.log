@@ -1,0 +1,227 @@
+
+Perple_X release 7.1.9 Oct 28, 2024.
+
+Copyright (C) 1986-2024 James A D Connolly <www.perplex.ethz.ch/copyright.html>.
+
+Enter the project name (the name assigned in BUILD) [default = my_project]:
+
+Reading Perple_X options from: perplex_option.dat
+Writing Perple_X option summary to: not requested
+
+Perple_X computational option settings for WERAMI:
+
+    Keyword:               Value:     Permitted values [default]:
+
+  Input/Output options:
+
+    aqueous_output          T         [F] T
+    aqeuous_species         20        [20] 0-150
+    aq_solvent_composition  y         [y] m: y => mol fraction, m => molality
+    aq_solute_composition   m         y [m]: y => mol fraction, m => molality
+    spreadsheet             T         [F] T
+    logarithmic_p           F         [F] T
+    logarithmic_X           F         [F] T
+    bad_number             NaN        [NaN]
+    composition_constant    F         [F] T
+    composition_phase       wt        [mol] wt
+    composition_system      wt        [wt] mol
+    proportions             wt        [vol] wt mol
+    absolute                F         [F] T
+    cumulative              F         [F] T
+    fancy_cumulative_modes  F         [F] T
+    interpolation           on        [on] off 
+    melt_is_fluid           T         [T] F
+    solution_names          mod       [model] abbreviation full
+    structural_formulae     T         [T] F
+    output_species          T         [T] F
+    output_species_props    F         [F] T
+    seismic_output          som       [some] none all
+    poisson_test            F         [F] T
+    interim_results         aut       [auto] off manual
+    sample_on_grid          T         [T] F
+
+  Information file output options:
+
+    option_list_files       F         [F] T; echo computational options
+
+  Thermodynamic options:
+
+    approx_alpha            T         [T] F
+    Anderson-Gruneisen      F         [F] T
+    finite_strain_alpha     F         [F] T
+    hybrid_EoS_H2O             4      [4] 0-2, 4-7
+    hybrid_EoS_CO2             4      [4] 0-4, 7
+    hybrid_EoS_CH4             0      [0] 0-1, 7
+    fd_expansion_factor     2.0       [2] >0
+    finite_difference_p     1.0E+04   [1d4] >0; fraction = 1.0E-03   [1d-3]
+
+  Seismic wavespeed computational options:
+
+    seismic_data_file       T         [F] T
+    bounds                  VRH       [VRH] HS
+    vrh/hs_weighting        0.5       [0.5] 0->1
+    explicit_bulk_modulus   T         [T] F
+    poisson_ratio           on        [on] all off; Poisson ratio = 0.35
+    seismic_output          som       [some] none all
+    poisson_test            F         [F] T
+    Tisza_test              F         [F] T
+    fluid_shear_modulus     T         [T] F
+    phi_d                   0.36      [0.36] 0->1
+
+  Error/warning control options:
+
+    pause_on_error          T         [T] F
+    max_warn_limit            5       [5]
+    warn_interactive        T         [T] F
+    aq_error_ver100         F         [F] T, abort during iteration
+    aq_error_ver101         T         [T] F, solute undersaturation abort
+    aq_error_ver102         T         [T] F, pure + impure solvent abort
+    aq_error_ver103         T         [T] F, out-of-range HKF g abort
+    aq_error_ver104         T         [T] F, abort on failed respeciation
+    warning_ver637          T         [T] F
+    error_ver109            T         [T] F
+    do_not_reset_options    F         [F] T, prevents automatic resets
+
+To change these options see: www.perplex.ethz.ch/perplex_options.html
+
+--------------------------------------------------------------------------------
+Select operational mode:
+    1 - properties at specified conditions
+    2 - properties on a 2d grid
+    3 - properties along a 1d path
+    4 - as in 3, but input from file
+    0 - EXIT
+
+Console output will be echoed in file: 1_1.txt                                                                                             
+
+
+Enter T(K) and P(bar) (99 and 99 to quit):
+
+**warning ver178** at T(K)=   700.0     P(bar)=  0.1500E+05
+the shear modulus of: Cpx(HGP)      
+is missing or invalid and has been estimated with the poisson_ratio option
+
+
+**warning ver178** at T(K)=   700.0     P(bar)=  0.1500E+05
+the shear modulus of: Chl(W)        
+is missing or invalid and has been estimated with the poisson_ratio option
+
+
+**warning ver178** at T(K)=   700.0     P(bar)=  0.1500E+05
+the shear modulus of: zo            
+is missing or invalid and has been estimated with the poisson_ratio option
+
+
+**warning ver178** at T(K)=   700.0     P(bar)=  0.1500E+05
+the shear modulus of: law           
+is missing or invalid and has been estimated with the poisson_ratio option
+
+
+**warning ver178** at T(K)=   700.0     P(bar)=  0.1500E+05
+the shear modulus of: sph           
+is missing or invalid and has been estimated with the poisson_ratio option
+
+
+**warning ver049** warning 178 will not be repeated for future instances of this problem.
+currently in routine: GETPHP
+
+To see how often this warning occurs increase max_warn_limit
+
+
+----------------------------------------
+
+Stable phases at:
+                             T(K)     =  700.000    
+                             P(bar)   =  15000.0    
+
+Phase Compositions (weight percentages):
+                   wt %      vol %     mol %     mol        SiO2     TiO2     Al2O3    FeO      MgO      CaO      Na2O     H2O  
+ Cpx(HGP)          42.71     38.32     40.61    0.193       53.409    0.003    4.541   11.607    7.959   19.719    2.762    0.000
+ Chl(W)            37.65     40.97     13.50    0.642E-01   30.025    0.000   17.412   15.560   24.923    0.000    0.000   12.079
+ zo                 4.55      4.19      2.14    0.102E-01   39.672    0.000   33.661    0.000    0.000   24.684    0.000    1.982
+ law                2.43      2.41      1.65    0.786E-02   38.241    0.000   32.447    0.000    0.000   17.846    0.000   11.466
+ sph                1.20      1.04      1.31    0.624E-02   30.651   40.742    0.000    0.000    0.000   28.607    0.000    0.000
+ q                 11.45     13.06     40.77    0.194      100.000    0.000    0.000    0.000    0.000    0.000    0.000    0.000
+
+Phase speciation (molar proportions):
+
+ Cpx(HGP)          mcbuf: 0.00017, jd: 0.20057, cats: -0.00017, cfsg: 0.35626, cenjh: 0.00102, di: 0.79117, cfm: -0.34902
+ Chl(W)            daph: 0.28140, ames: 0.01885, afchl: 0.11502, clin: 0.69970, och1: 0.00001, och2: -0.11497
+
+Structural formulae for 688 format solution models:
+
+ Phase           Site  Multiplicity  Molar Site Fractions
+
+ Cpx(HGP)      
+                  M1      1.00       Fe(.3563)Mg(.4433)Ti(.0001)Al(.2004)
+                  M2      1.00       Na(.2006)Mg(.0010)Fe(.0072)Ca(.7912)
+                  T       2.00       Al(.0000)Si(1.0000)
+           Non-mixing stoichiometry: [O6]                                                        
+
+ Chl(W)        
+                  M1      1.00       Al(.0188)Fe(.1664)Mg(.8147)
+                  M23     4.00       Fe(.2814)Mg(.7186)
+                  M4      1.00       Fe(.0000)Mg(.0000)Al(.9999)
+                  T2      2.00       Al(.5094)Si(.4906)
+           Non-mixing stoichiometry: [Si2O10(OH)8]                                               
+
+
+Molar Properties and Density:
+                    N(g)          G(J)     S(J/K)     V(J/bar)      Cp(J/K)       Alpha(1/K)  Beta(1/bar)    Cp/Cv    Density(kg/m3)
+ Cpx(HGP)          224.99       -2870417   336.25       6.5608       232.57      0.33545E-04  0.84170E-06   1.0271       3429.4    
+ Chl(W)            596.58       -7812999   1065.3       21.102       780.46      0.25445E-04  0.11159E-05   1.0111       2827.1    
+ zo                454.36       -6496521   659.96       13.577       494.08      0.38552E-04  0.95855E-06   1.0307       3346.4    
+ law               314.24       -4516552   524.16       10.137       416.86      0.33944E-04  0.81570E-06   1.0246       3100.0    
+ sph               196.03       -2456396   266.08       5.5276       188.57      0.17536E-04  0.91535E-06   1.0069       3546.3    
+ q                  60.08        -849450   88.512       2.2273       66.569      0.40698E-04  0.22479E-05   1.0176       2697.6    
+ System            101.70       -1337347   162.96       3.3054       117.39      0.31212E-04  0.11428E-05   1.0171       3076.8    
+
+Seismic Properties:
+                 Gruneisen_T      Ks(bar)      Mu(bar)    V0(km/s)     Vp(km/s)     Vs(km/s)   Poisson ratio
+ Cpx(HGP)           1.1548      0.12203E+07  0.40676E+06   5.9652       7.1692       3.4440      0.35000    
+ Chl(W)            0.62337      0.90610E+06  0.30203E+06   5.6613       6.8040       3.2686      0.35000    
+ zo                 1.1392      0.10753E+07  0.35844E+06   5.6686       6.8129       3.2728      0.35000    
+ law                1.0368      0.12561E+07  0.41871E+06   6.3656       7.6505       3.6752      0.35000    
+ sph               0.56547      0.11001E+07  0.36669E+06   5.5695       6.6938       3.2156      0.35000    
+ q                 0.61638      0.45266E+06  0.15089E+06   4.0964       4.9232       2.3650      0.35000    
+ System            0.85707      0.93788E+06  0.31263E+06   5.5211       6.6355       3.1876      0.35000    
+
+Bulk Composition:
+              mol        g        wt %     mol/kg
+    SiO2      0.824    49.500    48.673     8.101
+    TiO2      0.006     0.500     0.492     0.062
+    Al2O3     0.108    11.000    10.816     1.061
+    FeO       0.153    11.000    10.816     1.506
+    MgO       0.323    13.000    12.783     3.172
+    CaO       0.187    10.500    10.324     1.841
+    Na2O      0.019     1.200     1.180     0.190
+    H2O       0.278     5.000     4.916     2.729
+
+Other Bulk Properties:
+
+ Enthalpy (J/kg) = -.120283E+08
+ Specific Enthalpy (J/m3) = -.370089E+11
+ Entropy (J/K/kg) =  1602.32    
+ Specific Entropy (J/K/m3) = 0.493006E+07
+ Heat Capacity (J/K/kg) =  1154.24    
+ Specific Heat Capacity (J/K/m3) = 0.355139E+07
+
+
+Chemical Potentials (J/mol):
+
+      SiO2          TiO2          Al2O3         FeO           MgO           CaO           Na2O          H2O  
+    -849600.      -895035.     -0.159834E+07  -283814.      -615675.      -712162.      -711480.      -253862.    
+
+Variance (c-p+2) =  4
+
+
+----------------------------------------
+
+
+Enter T(K) and P(bar) (99 and 99 to quit):
+Select operational mode:
+    1 - properties at specified conditions
+    2 - properties on a 2d grid
+    3 - properties along a 1d path
+    4 - as in 3, but input from file
+    0 - EXIT

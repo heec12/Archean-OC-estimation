@@ -1,0 +1,26 @@
+using PerpleX
+
+# Point to your Perple_X installation
+perplexdir = "/Users/hchoi342/Documents/Archean-OC/Perple_X-7.1.9"
+
+# One bulk composition (wt% oxides, same order as your system)
+# NCFMAST: SiO2, TiO2, Al2O3, FeO, MgO, CaO, Na2O
+composition = [49.5, 0.5, 11.0, 11.0, 13.0, 10.5, 1.2]
+
+# Run a pseudosection
+result = perplex_configure_pseudosection(
+    perplexdir,
+    composition,
+    elements = ["SiO2","TiO2","Al2O3","FeO","MgO","CaO","Na2O"],
+    dataset  = "datafiles/hp62ver.dat",
+    solution_phases = ["O(HGP)","Cpx(HGP)","Opx(HGP)","Gt(HGP)"],
+    excludes = [],
+    P_range  = [0.5, 3.0],            # GPa — adjust for your subduction context
+    T_range  = [400.0, 900.0],        # °C
+    fluid_eos= 5,                     # H2O fluid
+    npoints  = 40,                    # grid resolution
+)
+
+# Query H2O content at specific P-T points
+h2o = perplex_query_point(result, 1.5, 650.0)
+

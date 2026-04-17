@@ -4,11 +4,15 @@ mass_balance_7oxides.py
 Bayesian inference of Archean oceanic crust bulk composition.
 7-oxide system: SiO2, TiO2, Al2O3, FeO, MgO, CaO, Na2O (NCFMAST)
 
-Two-stage sampling (v2.1):
+Two-stage sampling (v2.2):
   Stage 1 — MvNormal likelihood fits mu_UC and Sigma_UC to observed
-             komatiitic basalt data.
+             komatiitic basalt data. Uses higher target_accept and
+             max_treedepth to improve mixing of the LKJ covariance.
   Stage 2 — For each crustal architecture scenario, sample delta and f
              subject to geological constraints on x_lower.
+
+After sampling, exports posterior bulk composition ensembles as CSV
+files ready for Perple_X ensemble runs.
 
 Usage
 -----
@@ -31,10 +35,11 @@ import pytensor.tensor as pt
 
 
 # =============================================================================
-# 1. USER SETTINGS  (override via CLI args or edit directly)
+# 1. USER SETTINGS
 # =============================================================================
-SHEET_NAME  = "strict_komatiitic_basalt"
-RANDOM_SEED = 42
+SHEET_NAME      = "strict_komatiitic_basalt"
+RANDOM_SEED     = 42
+ENSEMBLE_SIZE   = 200   # number of posterior samples to export for Perple_X
 
 OXIDES = [
     "SiO2_pct",
@@ -139,7 +144,7 @@ def load_data(file_path, sheet_name=SHEET_NAME):
     if "Total_calc" in df.columns:
         df = df[(df["Total_calc"] >= MIN_TOTAL) & (df["Total_calc"] <= MAX_TOTAL)]
 
-    # De-duplicate on SampleID
+    # De-duplicate on SampleID to avoid inflating weight of repeated analyses
     if "SampleID" in df.columns:
         df = df.drop_duplicates(subset="SampleID")
 
@@ -177,16 +182,18 @@ def build_uc_model(X_obs, uc_mean_empirical, uc_std_empirical):
     """
     N, D = X_obs.shape
     with pm.Model() as uc_model:
-        # Latent true upper-crust mean
-        # Prior broad enough not to dominate the likelihood (3x empirical std)
+        # Latent true upper-crust mean.
+        # Prior broad enough not to dominate the likelihood (3x empirical std).
         mu_UC = pm.MvNormal(
             "mu_UC",
             mu    = uc_mean_empirical,
             cov   = np.diag((uc_std_empirical * 3.0) ** 2),
             shape = D,
         )
-        # LKJCholeskyCov: stable PyMC pattern for MvNormal covariance
-        # eta=2 => weakly regularises correlations toward identity
+        # LKJCholeskyCov: stable PyMC pattern for MvNormal covariance.
+        # eta=2 => weakly regularises correlations toward identity.
+        # Returns the (D, D) Cholesky factor directly — passed to MvNormal
+        # via chol= for numerical stability (avoids reconstructing full cov).
         chol_UC, corr_UC, sigma_UC = pm.LKJCholeskyCov(
             "chol_UC",
             n           = D,
@@ -194,7 +201,9 @@ def build_uc_model(X_obs, uc_mean_empirical, uc_std_empirical):
             sd_dist     = pm.HalfNormal.dist(sigma=uc_std_empirical * 1.5, shape=D),
             compute_corr= True,
         )
-        # Likelihood: each observed sample ~ MvNormal(mu_UC, chol chol^T)
+        # Likelihood: each observed sample ~ MvNormal(mu_UC, chol chol^T).
+        # This is the term that lets the data update mu_UC — the key fix
+        # from v1 which had no likelihood and was prior-only.
         _ = pm.MvNormal(
             "x_obs_likelihood",
             mu      = mu_UC,
@@ -209,9 +218,10 @@ def build_scenario_model(mu_UC_fixed, priors):
     Stage 2: sample delta and f given a fixed mu_UC.
 
     mu_UC is fixed to the Stage 1 posterior mean to avoid the identification
-    ridge between mu_UC and delta (x_bulk = mu_UC + delta would otherwise
-    allow the two to shift along a flat ridge while keeping x_bulk constant,
-    causing NUTS to hit max_treedepth and produce terrible mixing).
+    ridge between mu_UC and delta. If both were free simultaneously, the
+    relation x_bulk = mu_UC + delta allows them to shift along a flat ridge
+    while keeping x_bulk constant, causing NUTS to hit max_treedepth and
+    produce poor mixing (as observed in earlier runs).
 
     Parameters
     ----------
@@ -238,7 +248,7 @@ def build_scenario_model(mu_UC_fixed, priors):
         # Upper crust fraction
         f = pm.Uniform("f", lower=f_lo, upper=f_hi)
 
-        # Bulk crust composition
+        # Bulk crust composition anchored on Stage 1 posterior mu_UC
         x_bulk_raw = mu_UC_fixed + delta
         positive_composition_potential(x_bulk_raw, name="positive_bulk")
         x_bulk = pm.Deterministic(
@@ -246,7 +256,7 @@ def build_scenario_model(mu_UC_fixed, priors):
             100.0 * x_bulk_raw / pt.sum(x_bulk_raw),
         )
 
-        # Implied lower crust from mass balance
+        # Implied lower crust from two-layer mass balance
         x_lower_raw = (x_bulk - f * mu_UC_fixed) / (1.0 - f)
         positive_composition_potential(x_lower_raw, name="positive_lower")
         x_lower = pm.Deterministic(
@@ -254,7 +264,8 @@ def build_scenario_model(mu_UC_fixed, priors):
             100.0 * x_lower_raw / pt.sum(x_lower_raw),
         )
 
-        # Closure diagnostic: pre-normalisation sum should be ~100
+        # Closure diagnostic: pre-normalisation sum should be ~100.
+        # Large deviations indicate a poorly-posed mass balance.
         _ = pm.Deterministic("closure_error", pt.sum(x_lower_raw) - 100.0)
 
         # Hard geological bounds on lower crust
@@ -271,7 +282,13 @@ def build_scenario_model(mu_UC_fixed, priors):
 # =============================================================================
 
 def run_stage1(X_obs, uc_mean_empirical, uc_std_empirical, cores):
-    """Fit Stage 1 upper crust model and return trace + posterior mu_UC stats."""
+    """
+    Fit Stage 1 upper crust model and return trace + posterior mu_UC stats.
+
+    Uses higher target_accept (0.95) and max_treedepth (15) compared to
+    defaults to improve mixing of the LKJ covariance matrix, which has
+    difficult geometry with only ~30 samples and a 7D system.
+    """
     print("\n" + "="*60)
     print("STAGE 1: Upper crust MvNormal model")
     print("="*60)
@@ -280,16 +297,17 @@ def run_stage1(X_obs, uc_mean_empirical, uc_std_empirical, cores):
 
     with uc_model:
         uc_trace = pm.sample(
-            draws        = 2000,
-            tune         = 2000,
-            chains       = 4,
-            cores        = cores,
-            random_seed  = RANDOM_SEED,
-            target_accept= 0.90,
+            draws         = 2000,
+            tune          = 2000,
+            chains        = 4,
+            cores         = cores,
+            random_seed   = RANDOM_SEED,
+            target_accept = 0.95,    # higher than default to handle LKJ geometry
+            max_treedepth = 15,      # increased from default 10
             return_inferencedata=True,
         )
 
-    # Convergence check
+    # Convergence diagnostics
     print("\n--- Stage 1 convergence diagnostics ---")
     uc_summary = az.summary(uc_trace, var_names=["mu_UC"], round_to=3)
     rhat_bad = uc_summary["r_hat"] > 1.01
@@ -315,7 +333,12 @@ def run_stage1(X_obs, uc_mean_empirical, uc_std_empirical, cores):
 
 
 def run_stage2(mu_UC_post_mean, cores):
-    """Fit Stage 2 scenario models and return traces and summaries."""
+    """
+    Fit Stage 2 scenario models and return traces and summaries.
+
+    Uses target_accept=0.95 to reduce divergences from the hard
+    compositional constraints (positivity and bound potentials).
+    """
     traces    = {}
     summaries = {}
 
@@ -328,12 +351,12 @@ def run_stage2(mu_UC_post_mean, cores):
 
         with model:
             trace = pm.sample(
-                draws        = 2000,
-                tune         = 2000,
-                chains       = 4,
-                cores        = cores,
-                random_seed  = RANDOM_SEED,
-                target_accept= 0.92,
+                draws         = 2000,
+                tune          = 2000,
+                chains        = 4,
+                cores         = cores,
+                random_seed   = RANDOM_SEED,
+                target_accept = 0.95,    # increased from 0.92 to reduce divergences
                 return_inferencedata=True,
             )
 
@@ -412,12 +435,19 @@ def extract_results(traces, mu_UC_post_mean, mu_UC_post_std):
 
 
 # =============================================================================
-# 8. SAVE OUTPUTS
+# 8. SAVE OUTPUTS + EXPORT PERPLE_X ENSEMBLES
 # =============================================================================
 
 def save_outputs(output_dir, uc_trace, traces, summaries,
                  posterior_results, uc_mean_empirical):
-    """Save all posterior summaries, composition tables, and netCDF traces."""
+    """
+    Save all posterior summaries, composition tables, netCDF traces, and
+    Perple_X ensemble CSV files.
+
+    Ensemble files (ensemble_<scenario>.csv) contain ENSEMBLE_SIZE rows,
+    each a posterior draw of x_bulk (wt%, 7 oxides), ready to be fed into
+    the Perple_X Julia loop.
+    """
     os.makedirs(output_dir, exist_ok=True)
 
     # Empirical anchor reference
@@ -427,6 +457,8 @@ def save_outputs(output_dir, uc_trace, traces, summaries,
 
     # Stage 1 trace
     uc_trace.to_netcdf(os.path.join(output_dir, "trace_stage1_uc.nc"))
+
+    rng = np.random.default_rng(RANDOM_SEED)
 
     for scenario_name, result in posterior_results.items():
         # Posterior summary table
@@ -447,12 +479,28 @@ def save_outputs(output_dir, uc_trace, traces, summaries,
             os.path.join(output_dir, f"posterior_compositions_{scenario_name}.csv")
         )
 
-        # Full trace for downstream ensemble use
+        # Full trace (netCDF) for downstream use
         traces[scenario_name].to_netcdf(
             os.path.join(output_dir, f"trace_{scenario_name}.nc")
         )
 
-    print(f"\nOutputs saved to: {output_dir}/")
+        # ── Perple_X ensemble export ──────────────────────────────────────────
+        # Draw ENSEMBLE_SIZE samples from the posterior x_bulk distribution.
+        # Each row is one bulk composition (wt%, 7 oxides) to run through
+        # Perple_X. The ensemble captures full posterior uncertainty in the
+        # bulk composition, which propagates into uncertainty in the P-T-H2O
+        # lookup table.
+        bulk_all = traces[scenario_name].posterior["x_bulk"].values.reshape(-1, 7)
+        n_draw   = min(ENSEMBLE_SIZE, len(bulk_all))
+        idx      = rng.choice(len(bulk_all), size=n_draw, replace=False)
+        ensemble = bulk_all[idx]
+
+        df_ens = pd.DataFrame(ensemble, columns=OXIDES)
+        ens_path = os.path.join(output_dir, f"ensemble_{scenario_name}.csv")
+        df_ens.to_csv(ens_path, index=False)
+        print(f"  Perple_X ensemble ({n_draw} samples): ensemble_{scenario_name}.csv")
+
+    print(f"\nAll outputs saved to: {output_dir}/")
     for fname in sorted(os.listdir(output_dir)):
         print(f"  {fname}")
 
@@ -481,12 +529,20 @@ def main():
         "--cores", type=int, default=2,
         help="Number of CPU cores for parallel chain sampling (default: 2)"
     )
+    parser.add_argument(
+        "--ensemble_size", type=int, default=ENSEMBLE_SIZE,
+        help=f"Number of posterior samples to export for Perple_X (default: {ENSEMBLE_SIZE})"
+    )
     args = parser.parse_args()
+
+    # Allow CLI override of ensemble size
+    global ENSEMBLE_SIZE
+    ENSEMBLE_SIZE = args.ensemble_size
 
     # -- Load data --
     X_obs, uc_mean_empirical, uc_std_empirical = load_data(args.data, args.sheet)
 
-    # -- Stage 1: fit upper crust model --
+    # -- Stage 1: fit upper crust MvNormal model --
     uc_trace, mu_UC_post_mean, mu_UC_post_std = run_stage1(
         X_obs, uc_mean_empirical, uc_std_empirical, args.cores
     )
@@ -497,23 +553,23 @@ def main():
     # -- Extract and print results --
     posterior_results = extract_results(traces, mu_UC_post_mean, mu_UC_post_std)
 
-    # -- Save outputs --
+    # -- Save outputs + export Perple_X ensembles --
     save_outputs(
         args.output, uc_trace, traces, summaries,
         posterior_results, uc_mean_empirical
     )
 
-    # -- Downstream note --
     print("\n" + "="*60)
-    print("DOWNSTREAM: Perple_X ensemble")
+    print("NEXT STEPS: Perple_X ensemble")
     print("="*60)
-    print("To propagate uncertainty into Perple_X, draw from the posterior:")
+    print("Load the ensemble CSV files in Julia:")
     print()
-    print("  import xarray as xr")
-    print("  trace = az.from_netcdf('trace_homogeneous_crust.nc')")
-    print("  bulk  = trace.posterior['x_bulk'].values.reshape(-1, 7)")
-    print("  idx   = np.random.choice(len(bulk), size=200, replace=False)")
-    print("  bulk_ensemble = bulk[idx]  # 200 compositions -> 200 Perple_X runs")
+    print("  using CSV, DataFrames, StatGeochem")
+    print("  df = CSV.read(\"ensemble_homogeneous_crust.csv\", DataFrame)")
+    print("  # Loop over rows -> perplex_configure_pseudosection + query")
+    print()
+    print("Each row is one posterior bulk composition (wt%, 7 oxides).")
+    print("Append your H2O estimate as the 8th component before passing to Perple_X.")
 
 
 if __name__ == "__main__":

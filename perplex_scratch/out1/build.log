@@ -1,0 +1,478 @@
+
+Perple_X release 7.1.9 Oct 28, 2024.
+
+Copyright (C) 1986-2024 James A D Connolly <www.perplex.ethz.ch/copyright.html>.
+
+
+NO is the default (blank) answer to all Y/N prompts
+
+
+Enter a name for this project (the name will be used as the
+root for all output file names) [default = my_project]:
+
+The problem definition file will be named: 1.dat                                                                                               
+
+Enter thermodynamic data file name [default = hp62ver.dat]:
+
+Enter the computational option file name [default = perplex_option.dat]:
+See: www.perplex.ethz.ch/perplex_options.html
+
+Reading Perple_X options from: perplex_option.dat
+
+The current data base components are:
+ Na2O  MgO   Al2O3 SiO2  K2O   CaO   TiO2  MnO   FeO   NiO   ZrO2  Cl2  
+ O2    H2O   CO2   CuO   Cr2O3 S2    F2    N2    ZnO  
+Transform them (Y/N)? 
+
+Specify computational mode:
+
+     1 - Convex-Hull minimization
+     2 - Constrained minimization on a 2d grid [default]
+     3 - Constrained minimization on a 1d grid
+     4 - Output pseudocompound data
+     5 - 1-d Phase fractionation
+     6 - 0-d Infiltration-reaction-fractionation
+     7 - 2-d Phase fractionation (FRAC2D and TITRATE reactive transport models)
+     8 - (pseudo-)Ternary liquidus/solidus surfaces
+
+Use Convex-Hull minimization for Schreinemakers projections or phase diagrams
+with > 2 independent variables. Use constrained minimization for phase diagrams
+or phase diagram sections with < 3 independent variables.
+
+Calculations with a saturated fluid (Y/N)?
+
+Calculations with saturated components (Y/N)?
+
+Use chemical potentials, activities or fugacities as independent
+variables (Y/N)?
+
+Select thermodynamic components from the set:
+ Na2O  MgO   Al2O3 SiO2  K2O   CaO   TiO2  MnO   FeO   NiO   ZrO2  Cl2  
+ O2    H2O   CO2   CuO   Cr2O3 S2    F2    N2    ZnO  
+Enter names, 1 per line, press <enter> to finish:
+The data base has P(bar) and T(K) as default independent potentials. Make
+one dependent on the other, e.g., as along a geothermal gradient (y/n)? 
+
+Select x-axis variable:
+     1 - P(bar)  
+     2 - T(K)    
+     3 - Composition X_C1* (user defined)
+*X_C1 can not be selected as the y-axis variable.
+
+Enter minimum and maximum values, respectively, for: T(K)    
+
+Enter minimum and maximum values, respectively, for: P(bar)  
+
+For gridded minimization, grid resolution is determined by the number of levels
+(grid_levels) and the resolution at the lowest level in the X- and Y-directions (x_nodes
+and y_nodes) these parameters are currently set for the exploratory and autorefine cycles
+as follows:
+
+stage        grid_levels  xnodes  ynodes    effective resolution
+exploratory       1          42      42        42 x  42 nodes
+auto-refine       4          42      42       329 x 329 nodes
+
+To change these options edit or create the file perplex_option.dat
+See: www.perplex.ethz.ch/perplex_options.html#grid_parameters
+
+Specify component amounts by mass (Y/N)?
+
+The amounts you enter next need not be normalized; regardless of units, they
+define the molar amount of the system.
+
+Enter the mass  amounts of the components:
+ SiO2  TiO2  Al2O3 FeO   MgO   CaO   Na2O  H2O  
+for the bulk composition of interest:
+
+Output a print file (Y/N)?
+  
+
+Exclude pure and/or endmember phases (Y/N)?
+Do you want to be prompted for phases (Y/N)?
+Enter names, 1 per line, press <enter> to finish:
+Include solution models (Y/N)?
+Enter the solution model file name [default = solution_model.dat]: 
+
+**warning ver114** the following endmembers are missing for TiCh(PL):
+  tchum     ftchum  
+**warning ver025** 1 endmembers for TiChdr(B). The solution will not be considered.
+**warning ver114** the following endmembers are missing for feldspar:
+  san     
+**warning ver114** the following endmembers are missing for cAmph_I(G):
+  mrbG      frb_d     mgrk_d    fgrk_d    mcgrk_d   fcgrk_d 
+  tmkpg_d   tfkpg_d   omkpg_d   ofkpg_d   kmparg_d  kfparg_d
+  ompg_d    ofpg_d    tcmkpg_d  tcfkpg_d  ocmkpg_d  ocfkpg_d
+  kprg      kfcprg_d  ocmpg_d   ocfpg_d 
+**warning ver114** the following endmembers are missing for cAmph(G):
+  mrbG      frb_d     kmparg_d  kfparg_d  kprg      kfcprg_d
+  mgrk_d    fgrk_d    mcgrk_d   fcgrk_d 
+**warning ver025** 1 endmembers for Aq_solvent. The solution will not be considered.
+**warning ver025** 1 endmembers for Aq_yuri. The solution will not be considered.
+**warning ver025** 1 endmembers for Aq_solven0. The solution will not be considered.
+**warning ver114** the following endmembers are missing for Cpx_I(HGP):
+  mkbuf_d   crkjd_d   crjd_d    crdih     kess_d    ness_d  
+  cessh     kjdh      crfs_d    cren_d    fess_d    mess_d  
+**warning ver114** the following endmembers are missing for Cpx(HGP):
+  mkbuf_d   crkjd_d   crjd_d    crdih     kess_d    ness_d  
+  cessh     kjdh      crfs_d    cren_d    fess_d    mess_d  
+**warning ver114** the following endmembers are missing for Augite(G):
+  acm       cacm_d    macm_d    facm_d  
+**warning ver114** the following endmembers are missing for Aqfl(HGP):
+  foWL      faWL      jdWL      kWL       ekWL      hmWL    
+  tiWL      qWL     
+**warning ver114** the following endmembers are missing for melt(HGPH):
+  kjL       ekL       hmL       tiL       CO2     
+**warning ver114** the following endmembers are missing for melt(G):
+  kspL    
+**warning ver114** the following endmembers are missing for Chl(W):
+  mnchl     ff3cli    f3clin  
+**warning ver025** 1 endmembers for Ep(HP11). The solution will not be considered.
+**warning ver114** the following endmembers are missing for Cpx(JH):
+  crjd_d    crdi      ness_d    cess      cren_d    crfs_d  
+  mess_d    fess_d  
+**warning ver114** the following endmembers are missing for Melt(JH):
+  hmjL      ekjL    
+**warning ver114** the following endmembers are missing for Sp(JH):
+  mt        picr    
+**warning ver114** the following endmembers are missing for Grt(JH):
+  fkno_d    knor      ckno_d    fkho_d    kho_d     andr    
+**warning ver114** the following endmembers are missing for Opx(JH):
+  odif      oen       ofs       odicr     cren      crfs    
+**warning ver114** the following endmembers are missing for Gt(W):
+  spss      fmn_i     fkho_i    kho1      andr_i  
+**warning ver114** the following endmembers are missing for Melt(A):
+  hltL    
+**warning ver114** the following endmembers are missing for melt(W):
+  kspL    
+**warning ver114** the following endmembers are missing for Mica(W):
+  mu        cel       fmu       fcel    
+**warning ver114** the following endmembers are missing for Ctd(W):
+  ctdo      mnctd   
+**warning ver114** the following endmembers are missing for St(W):
+  msto      mnst    
+**warning ver114** the following endmembers are missing for Opx(W):
+  mnopx     mots1     feots_d 
+**warning ver025** 0 endmembers for Bi(W). The solution will not be considered.
+**warning ver025** 0 endmembers for Bi(HGP). The solution will not be considered.
+**warning ver114** the following endmembers are missing for Crd(W):
+  mncrd     hmncrd_i
+**warning ver114** the following endmembers are missing for Crd(HGP):
+  mncrd     hmncrd_i
+**warning ver114** the following endmembers are missing for Sa(WP):
+  ospr    
+**warning ver114** the following endmembers are missing for Opx(HP):
+  mots      feots   
+**warning ver025** 0 endmembers for Bio(TCC). The solution will not be considered.
+**warning ver025** 0 endmembers for Bio(WPH). The solution will not be considered.
+**warning ver114** the following endmembers are missing for CrOpx(HP):
+  crts      fcrts_d   mots      feots   
+**warning ver114** the following endmembers are missing for CrGt:
+  uv_d      fuv_d     knor    
+**warning ver114** the following endmembers are missing for Gt(MPF):
+  skiag     kho       andr      fuv_d     knor      uv_d    
+**warning ver114** the following endmembers are missing for Pu:
+  mjgd      jgd     
+**warning ver025** 1 endmembers for pMELTS(G). The solution will not be considered.
+**warning ver025** 1 endmembers for mMELTS(G). The solution will not be considered.
+**warning ver025** 0 endmembers for MELTS(GS). The solution will not be considered.
+**warning ver025** 1 endmembers for Ep(HP). The solution will not be considered.
+**warning ver025** 1 endmembers for Pheng(HP). The solution will not be considered.
+**warning ver025** 0 endmembers for Osm(HP). The solution will not be considered.
+**warning ver025** 0 endmembers for Osm(HP11). The solution will not be considered.
+**warning ver114** the following endmembers are missing for GaHcSp:
+  gah     
+**warning ver025** 1 endmembers for F. The solution will not be considered.
+**warning ver025** 1 endmembers for F(salt). The solution will not be considered.
+**warning ver025** 0 endmembers for Scap. The solution will not be considered.
+**warning ver114** the following endmembers are missing for St(HP):
+  mnst    
+**warning ver114** the following endmembers are missing for Ctd(HP):
+  mnctd   
+**warning ver114** the following endmembers are missing for hCrd:
+  mncrd     hmncrd_i
+**warning ver025** 1 endmembers for A. The solution will not be considered.
+**warning ver114** the following endmembers are missing for feldspar_B:
+  san     
+**warning ver025** 1 endmembers for Kf. The solution will not be considered.
+**warning ver025** 1 endmembers for San. The solution will not be considered.
+**warning ver025** 1 endmembers for San(TH). The solution will not be considered.
+**warning ver025** 0 endmembers for GCOHF. The solution will not be considered.
+**warning ver025** 0 endmembers for COHF. The solution will not be considered.
+**warning ver025** 1 endmembers for Mica(CF). The solution will not be considered.
+**warning ver114** the following endmembers are missing for Mica(CHA1):
+  cel       npa       nma       fcel      nfpa      nfma    
+  tip       ntip      ctip      ftip      nftip     cftip   
+  mu      
+**warning ver114** the following endmembers are missing for Mica(CHA):
+  mu        cel       tip       fcel    
+**warning ver114** the following endmembers are missing for Mica+(CHA):
+  mu        cel       tip       fcel    
+**warning ver114** the following endmembers are missing for O(HP):
+  teph      fran    
+**warning ver025** 0 endmembers for Stlp. The solution will not be considered.
+**warning ver114** the following endmembers are missing for O(HPK):
+  teph    
+**warning ver025** 0 endmembers for Do(HP). The solution will not be considered.
+**warning ver025** 0 endmembers for M(HP). The solution will not be considered.
+**warning ver025** 0 endmembers for Do(AE). The solution will not be considered.
+**warning ver025** 0 endmembers for Cc(AE). The solution will not be considered.
+**warning ver025** 0 endmembers for MF. The solution will not be considered.
+**warning ver025** 1 endmembers for Mt(W). The solution will not be considered.
+**warning ver114** the following endmembers are missing for IlHm(A):
+  hem     
+**warning ver114** the following endmembers are missing for IlGkPy:
+  pnt     
+**warning ver025** 1 endmembers for MtUl(A). The solution will not be considered.
+**warning ver025** 1 endmembers for Neph(FB). The solution will not be considered.
+**warning ver114** the following endmembers are missing for Gt(B):
+  spss    
+**warning ver114** the following endmembers are missing for Gt(GCT):
+  spss    
+**warning ver114** the following endmembers are missing for Gt(HP):
+  spss    
+**warning ver114** the following endmembers are missing for Gt(EWHP):
+  andr      FA_d      MA_d    
+**warning ver114** the following endmembers are missing for Gt(WPH):
+  spss      fmn_i     fkho_i    kho_i     andr    
+**warning ver025** 0 endmembers for casmelt. The solution will not be considered.
+**warning ver114** the following endmembers are missing for Pl(I1,HP):
+  san     
+**warning ver114** the following endmembers are missing for Fsp(C1):
+  san     
+**warning ver025** 0 endmembers for oCcM(HP). The solution will not be considered.
+**warning ver025** 0 endmembers for Tour(V). The solution will not be considered.
+**warning ver025** 0 endmembers for DoDo. The solution will not be considered.
+**warning ver025** 1 endmembers for Wus(fab). The solution will not be considered.
+**warning ver025** 1 endmembers for Aki(fab). The solution will not be considered.
+**warning ver025** 0 endmembers for Pv(fab). The solution will not be considered.
+**warning ver025** 0 endmembers for Ppv(og). The solution will not be considered.
+**warning ver025** 0 endmembers for Wad(stx). The solution will not be considered.
+**warning ver025** 0 endmembers for Ring(stx). The solution will not be considered.
+**warning ver025** 0 endmembers for C2/c(stx). The solution will not be considered.
+**warning ver114** the following endmembers are missing for Cpx(stx):
+  mdi     
+**warning ver114** the following endmembers are missing for Cpx(stx7):
+  mdi     
+**warning ver114** the following endmembers are missing for Omph(HP):
+  acm     
+**warning ver114** the following endmembers are missing for Cpx(HP):
+  esn       ccrts     acm     
+**warning ver114** the following endmembers are missing for CrSp:
+  mcrm      fcrm_d    mft       mt      
+**warning ver025** 1 endmembers for Eskol(C). The solution will not be considered.
+**warning ver025** 1 endmembers for Wus(stx7). The solution will not be considered.
+**warning ver025** 1 endmembers for Aki(stx7). The solution will not be considered.
+**warning ver025** 0 endmembers for Pv(stx7). The solution will not be considered.
+**warning ver025** 0 endmembers for Wad(stx7). The solution will not be considered.
+**warning ver025** 0 endmembers for Ring(stx7). The solution will not be considered.
+**warning ver114** the following endmembers are missing for Sp(WPC):
+  mt      
+**warning ver114** the following endmembers are missing for Sp_II(WPC):
+  mft_d     mt      
+**warning ver025** 0 endmembers for Po(HP). The solution will not be considered.
+**warning ver025** 0 endmembers for Wad(stx8). The solution will not be considered.
+**warning ver025** 0 endmembers for Ring(stx8). The solution will not be considered.
+**warning ver114** the following endmembers are missing for Cpx(stx8):
+  mdi       cts     
+**warning ver025** 1 endmembers for Aki(stx8). The solution will not be considered.
+**warning ver114** the following endmembers are missing for Gt(stx8):
+  jmaj    
+**warning ver025** 0 endmembers for Ppv(stx8). The solution will not be considered.
+**warning ver025** 0 endmembers for CF(stx8). The solution will not be considered.
+**warning ver025** 0 endmembers for Pu(M). The solution will not be considered.
+**warning ver114** the following endmembers are missing for Act(M):
+  acti      mrie    
+**warning ver025** 0 endmembers for Stlp(M). The solution will not be considered.
+**warning ver114** the following endmembers are missing for Mica(M):
+  mu      
+**warning ver114** the following endmembers are missing for Carp(M):
+  mnca    
+**warning ver025** 0 endmembers for Carb(M). The solution will not be considered.
+**warning ver025** 0 endmembers for Bio(HP). The solution will not be considered.
+**warning ver114** the following endmembers are missing for Mica(SGH):
+  mu        cel       fmu       fcel    
+**warning ver114** the following endmembers are missing for Ctd(SGH):
+  octd      mnctd   
+**warning ver114** the following endmembers are missing for Carp(SGH):
+  mncar     ocar    
+**warning ver114** the following endmembers are missing for Gt(WPPH):
+  spss      fmn_i     fkho_i    kho       andr_i  
+**warning ver114** the following endmembers are missing for cAmph(DP):
+  mrb       frb_d     mcgrk_d   fcgrk_d   mgrk_d    fgrk_d  
+**warning ver114** the following endmembers are missing for cAmph_I(DP:
+  mrb       frb_d     mgrk_d    fgrk_d    mcgrk_d   fcgrk_d 
+  ompg_d    ofpg_d    ocmpg_d   ocfpg_d   nmfn_d    nffn_d  
+  nmfmn_d   nfffn_d   nmfcn_d   nffcn_d 
+**warning ver114** the following endmembers are missing for oAmph(DP):
+  omrb_dqf  frb_d     mcgrk_d   fcgrk_d   mgrk_d    fgrk_d  
+**warning ver114** the following endmembers are missing for Omph(GHP):
+  acm_dqf 
+**warning ver025** 0 endmembers for FeSi(BCC). The solution will not be considered.
+**warning ver025** 0 endmembers for FeSi(fcc). The solution will not be considered.
+**warning ver025** 0 endmembers for oFeSi(bcc). The solution will not be considered.
+**warning ver025** 0 endmembers for FeSi_liq. The solution will not be considered.
+**warning ver025** 1 endmembers for ZrRu. The solution will not be considered.
+**warning ver025** 0 endmembers for Si-Fluid. The solution will not be considered.
+**warning ver025** 1 endmembers for COH-Fluid. The solution will not be considered.
+**warning ver025** 1 endmembers for COH-Fluid+. The solution will not be considered.
+
+**warning ver099** WADDAH    will be rejected because aq_lagged_speciation = F
+
+**warning ver025** 0 endmembers for C-H-Fluid. The solution will not be considered.
+**warning ver025** 1 endmembers for HOS-Fluid. The solution will not be considered.
+**warning ver025** 1 endmembers for HO-Fluid. The solution will not be considered.
+**warning ver025** 0 endmembers for FeSiC_liq. The solution will not be considered.
+**warning ver114** the following endmembers are missing for Sapp(TP):
+  ospr    
+**warning ver025** 0 endmembers for oCcM(EF). The solution will not be considered.
+**warning ver025** 0 endmembers for LIQ(NK). The solution will not be considered.
+**warning ver025** 0 endmembers for LIQ(EF). The solution will not be considered.
+**warning ver025** 0 endmembers for dis(EF). The solution will not be considered.
+**warning ver025** 0 endmembers for Si-vapor. The solution will not be considered.
+**warning ver025** 0 endmembers for CCO-vapor. The solution will not be considered.
+**warning ver025** 0 endmembers for ideal_gas. The solution will not be considered.
+**warning ver025** 0 endmembers for FeSiC-BCC. The solution will not be considered.
+**warning ver025** 0 endmembers for FeSiC-FCC. The solution will not be considered.
+**warning ver025** 0 endmembers for FeCr(liq). The solution will not be considered.
+**warning ver025** 0 endmembers for FeCr-FCC. The solution will not be considered.
+**warning ver025** 0 endmembers for FeCr-BCC. The solution will not be considered.
+**warning ver025** 0 endmembers for FeCr-s. The solution will not be considered.
+**warning ver025** 0 endmembers for FeCliq. The solution will not be considered.
+**warning ver025** 0 endmembers for FeCfcc. The solution will not be considered.
+**warning ver025** 0 endmembers for FeCbcc. The solution will not be considered.
+**warning ver114** the following endmembers are missing for Ilm(WPH):
+  pnt       hem     
+**warning ver114** the following endmembers are missing for Ilm(DS6):
+  pnt       dhem    
+**warning ver114** the following endmembers are missing for Gt(H):
+  cnagt_d   fnagt_d   nagt    
+**warning ver114** the following endmembers are missing for Mpv(H):
+  mnpv    
+**warning ver114** the following endmembers are missing for Cpv(H):
+  cnpv    
+**warning ver025** 0 endmembers for CFer(H). The solution will not be considered.
+**warning ver025** 0 endmembers for NAl(H). The solution will not be considered.
+**warning ver114** the following endmembers are missing for Hpx(H):
+  hfs       tsfs_d    ofdi_d  
+**warning ver025** 0 endmembers for Po(SE). The solution will not be considered.
+**warning ver025** 0 endmembers for FeS_liq. The solution will not be considered.
+**warning ver025** 1 endmembers for Atg(LE). The solution will not be considered.
+**warning ver025** 1 endmembers for Liz(LE). The solution will not be considered.
+**warning ver114** the following endmembers are missing for GlTrTsMr:
+  mrie      fmrie_i 
+**warning ver114** the following endmembers are missing for Ca-Amph(D):
+  mfets     ffets_i 
+**warning ver114** the following endmembers are missing for Na-Amph(D):
+  mrieb_i   rieb    
+**warning ver114** the following endmembers are missing for Amph(DHP):
+  mfets     ffets_i 
+**warning ver114** the following endmembers are missing for Amph(DPW):
+  mfets     ffets_i 
+**warning ver114** the following endmembers are missing for Sapp(HP):
+  spr7      fsp4_i  
+**warning ver114** the following endmembers are missing for Chl(HP):
+  mame_i    mafchl_i  mnchl   
+**warning ver114** the following endmembers are missing for Chl(LWV):
+  fsud_i    sud_dqf 
+**warning ver114** the following endmembers are missing for Opx(HGP):
+  crjd_d    crdi_d    ness_d    cess_d    ojd       ffbuf_d 
+  obuf      crfs_d    crenh     facm_d    macm    
+**warning ver025** 0 endmembers for Sp(HGP). The solution will not be considered.
+**warning ver114** the following endmembers are missing for Gt(HGP):
+  ftig_d    tig       ctig_d    fkno_d    knor      ckno_d  
+  fkho_d    kho_d     andr    
+**warning ver114** the following endmembers are missing for melt(HP):
+  zr8L      kspL      wi8L    
+**warning ver114** the following endmembers are missing for ZrGt(KP):
+  zrg       zngt      spss    
+**warning ver025** 0 endmembers for hWd. The solution will not be considered.
+**warning ver025** 0 endmembers for hRg. The solution will not be considered.
+**warning ver114** the following endmembers are missing for melt(TH):
+  foTHL     faTHL     kspL      neTHL     kjTHL     ekTHL   
+  hmTHL     tiTHL     qTHL    
+**warning ver025** 1 endmembers for Sp(TH). The solution will not be considered.
+**warning ver114** the following endmembers are missing for Gt(TH):
+  ftig_d    tigTH     ctig_d    fkno_d    knor      ckno_d  
+  fkho_d    kho_d     andr    
+**warning ver114** the following endmembers are missing for Opx(TH):
+  crjd_d    crdi_d    ness_d    cess_d    ojdTH     ffbuf_d 
+  obufTH    crfs_d    crenTH    facm_d    macmTH  
+**warning ver114** the following endmembers are missing for Cpx(TH):
+  mkbuf_d   mnbuf_d   mcbufTH   crkjd_d   crjd_d    crdiTH  
+  kess_d    ness_d    cessTH    kjdTH     ffbuf_d   mmbuf_d 
+  crfs_d    cren_d    fess_d    mess_d  
+**warning ver114** the following endmembers are missing for Fsp(HGP):
+  san     
+**warning ver114** the following endmembers are missing for melt(SP):
+  zr8L      kspL      wi8L      alp8L     cep8L     yp8L    
+**warning ver114** the following endmembers are missing for YGt(SP):
+  yag       spss    
+**warning ver025** 0 endmembers for Mnz(SP). The solution will not be considered.
+
+Select models from the following list, enter 1 per line, press <enter> to finish
+
+clinohumite models:       TiCh(PL)   Chum      
+ternary-feldspar models:  feldspar   feldspar_B Pl(I1,HP)  Fsp(C1)    Fsp(HGP)  
+clinoamphibole models:    cAmph_I(G) cAmph(G)   Cumm       Gl         Tr        
+                          Act(M)     cAmph(DP)  cAmph_I(DP GlTrTsMr   Ca-Amph(D)
+                          Na-Amph(D) GlTrTsPg   Amph(DHP)  Amph(DPW) 
+clinopyroxene models:     Cpx_I(HGP) Cpx(HGP)   Augite(G)  Cpx(JH)    Cpx(l)    
+                          Cpx(h)     Cpx(stx)   Cpx(stx7)  Omph(HP)   Cpx(HP)   
+                          Cpx(m)     Cpx(stx8)  Omph(GHP)  Cpx(TH)   
+fluid models:             Aqfl(HGP)  COH-Fluid  COH-Fluid+ WADDAH     HOS-Fluid 
+                          HO-Fluid  
+liquid models:            melt(HGPH) melt(G)    Melt(JH)   Melt(A)    Melt(B)   
+                          melt(W)    melt(HP)   melt(TH)   melt(SP)  
+chlorite models:          Chl(W)     Chl(HP)    Chl(LWV)  
+olivine models:           O(JH)      O(SG)      O(HP)      O(HPK)     O(stx)    
+                          O(stx7)    Ol(m)      O(stx8)    O(HGP)    
+spinel models:            Sp(JH)     GaHcSp     Sp(JR)     Sp(GS)     Sp(HP)    
+                          Sp(stx)    CrSp       Sp(stx7)   Sp(WPC)    Sp_II(WPC)
+                          Sp(stx8)  
+binary-feldspar models:   Pl(JH)     Pl(h)      Pl(stx8)   lAb(HGP)  
+garnet models:            Grt(JH)    Gt(W)      CrGt       Gt(MPF)    Gt(B)     
+                          Gt(GCT)    Gt(HP)     Gt(EWHP)   Gt(WPH)    Gt(stx)   
+                          Gt(stx8)   Gt(WPPH)   Maj        Gt(H)      Gt(HGP)   
+                          ZrGt(KP)   Gt(TH)     YGt(SP)   
+orthopyroxene models:     Opx(JH)    Opx(W)     Opx(HP)    CrOpx(HP)  Opx(stx)  
+                          Opx(stx8)  Opx(HGP)   Opx(TH)   
+white-mica models:        Mica(W)    MaPa       Mica(CHA1) Mica(CHA)  Mica+(CHA)
+                          Mica(M)    Mica(SGH) 
+chloritoid models:        Ctd(W)     Ctd(HP)    Ctd(SGH)  
+staurolite models:        St(W)      St(HP)    
+cordierite models:        Crd(W)     Crd(HGP)   hCrd      
+sapphirine models:        Sa(WP)     Sapp(TP)   Sapp(HP)   Sapp(KWP) 
+pumpellyite models:       Pu        
+carpholite models:        Carp       Carp(M)    Carp(SGH) 
+sudoite models:           Sud(Livi)  Sud        Sud(M)    
+orthoamphibole models:    Anth       oAmph(DP)  o-Amph    
+ilmenite models:          IlHm(A)    IlGkPy     Aki        Ilm(WPH)   Ilm(DS6)  
+alphabet-phase models:    A-phase   
+brucite models:           B         
+wadleysite models:        Wad       
+ringwoodite models:       Ring       Ring(H)   
+wuestite models:          Wus       
+perovskite models:        Pv        
+ferropericlase models:    Fper(H)   
+MgSi Perovskite models:   Mpv(H)    
+CaSi Perovskite models:   Cpv(H)    
+Corundum models:          Cor(H)    
+Akimotoite models:        Aki(H)    
+wadsleyite models:        Wad(H)    
+HP_clinopyroxene models:  Hpx(H)    
+talc models:              T         
+serpentine models:        Atg(PN)   
+
+For details on these models read the commentary in solution_model.dat
+
+
+Ep(HP)     is invalid. Check spelling, upper/lower case match, and do not use leading blanks. Try again:
+
+
+Pheng(HP)  is invalid. Check spelling, upper/lower case match, and do not use leading blanks. Try again:
+
+
+Sp(HGP)    is invalid. Check spelling, upper/lower case match, and do not use leading blanks. Try again:
+
+
+Enter calculation title:

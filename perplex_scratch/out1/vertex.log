@@ -1,0 +1,479 @@
+
+Perple_X release 7.1.9 Oct 28, 2024.
+
+Copyright (C) 1986-2024 James A D Connolly <www.perplex.ethz.ch/copyright.html>.
+
+Enter the project name (the name assigned in BUILD) [default = my_project]:
+
+Reading problem definition from file: 1.dat
+Reading thermodynamic data from file: hp62ver.dat
+Writing print output to file: 1.plt
+Writing plot output to file: 1.plt
+Writing phase assemblage data to file: 1.blk
+Reading solution models from file: solution_model.dat
+
+Reading Perple_X options from: perplex_option.dat
+Writing auto refine summary to: not requested
+Writing seismic data options to: 1_seismic_data.txt
+Writing pseudocompound glossary to: not requested
+Writing Perple_X option summary to: not requested
+
+Perple_X computational option settings for VERTEX:
+
+    Keyword:               Value:     Permitted values [default]:
+
+  Auto-refine options:
+
+    auto_refine             aut       [auto] manual off
+    replicate_threshold     0.1E-1    [1e-2]; static opt; <0 => no replica test
+    rep_dynamic_threshold   0.1E-2    [1d-3]; dynamic opt; <0 => no replica test
+    re-refine               F         [F] T
+    intermediate_savrpc     F         [F] T
+    intermediate_savdyn     F         [F] T
+    keep_all_rpcs           T         [T] F
+
+  Free energy minimization options:
+
+    MINFRC_diff_increment   0.1E-6    [1e-7] 1e-3 => 1e-9
+    MINFXC_solver            0        [0] >= 0 - speci2, -1 - MINFXC
+    optimization_max_it     40        [40] >1
+    optimization_precision  0.1E-3    [1e-4], 1e-1 => 1e-6, absolute
+    dynamic_LP_start        war       [warm] cold hot
+    static_LP_start         war       [hot] cold warm
+    order_check             F         [F] T
+    refinement_points       10        [auto] 1->14
+    scatter-points          T         [T] F
+    scatter-increment       0.1E-1    [1e-2] 1e-2 => 1e-7
+    solvus_tolerance_II     aut       [0.2] 0->1 
+    zero_mode               0.1E-5    [1e-6] 0->1; < 0 => off
+
+  2D grid options:
+
+    x_nodes                 42 / 42   [20/40] >0, <2048; effective x-resolution   42 / 329 nodes
+    y_nodes                 42 / 42   [20/40] >0, <2048; effective y-resolution   42 / 329 nodes
+    grid_levels             1 / 4     [1/4] >0, <10
+    linear_model            on        [on] off
+
+  Solution subdivision options:
+
+    initial_resolution:     0.2000    [1/5] 0->1; 0 => off
+    stretch_factor          0.0020    [2d-3] >0 
+    non_linear_switch       F         [F] T
+    subdivision_override    off       [lin] off str
+    refine_endmembers       F         [F] T
+
+  Thermodynamic options:
+
+    solvus_tolerance        aut       [aut] or 0->1; aut = automatic, 0 => p=c pseudocompounds, 1 => homogenize
+    T_stop (K)              0.0       [0]
+    T_melt (K)              873.0     [873]
+    approx_alpha            T         [T] F
+    Anderson-Gruneisen      F         [F] T
+    finite_strain_alpha     F         [F] T
+    speciation_precision    0.1E-4    [1d-5] <1; absolute
+    speciation_max_it       100       [100]
+    function_tolerance_exp  0.8       [0.8] sets x in tol = epsmch^x
+    hybrid_EoS_H2O          4         [4] 0-2, 4-7
+    hybrid_EoS_CO2          4         [4] 0-4, 7
+    hybrid_EoS_CH4          0         [0] 0-1, 7
+    aq_lagged_speciation    F         [F] T
+    aq_fractionation_simpl  F         [F] T
+    aq_ion_H+               T         [T] F => use OH-
+    aq_oxide_components     F         [F] T
+    aq_solvent_solvus_tol   0.5       [0.5] 0-1
+    aq_vapor_epsilon        1.0       [1.]
+
+  Input/Output options:
+
+    timing                  T         [T] F
+    auto_exclude            T         [T] F
+    output_iteration_detai  F         [F] T
+    output_iteration_g      F         [F] T
+    logarithmic_p           F         [F] T
+    logarithmic_X           F         [F] T
+    bad_number              NaN       [NaN]
+    interim_results         aut       [auto] off manual
+
+  Information file output options:
+
+    option_list_files       F         [F] T; echo computational options
+    pseudocompound_file     F         [F] T; echo static pseudocompound compositions
+    auto_refine_file        F         [T] F; echo auto-refine compositions
+    seismic_data_file       T         [F] T; echo seismic wavespeed options
+
+  Error/warning control options:
+
+    pause_on_error          T         [T] F
+    max_warn_limit            5       [5]
+    warn_interactive        T         [T] F
+    aq_error_ver100         F         [F] T, abort during iteration
+    aq_error_ver101         T         [T] F, solute undersaturation abort
+    aq_error_ver102         T         [T] F, pure + impure solvent abort
+    aq_error_ver103         T         [T] F, out-of-range HKF g abort
+    aq_error_ver104         T         [T] F, abort on failed respeciation
+    warning_ver637          T         [T] F
+    error_ver109            T         [T] F
+    do_not_reset_options    F         [F] T, prevents automatic resets
+
+To change these options see: www.perplex.ethz.ch/perplex_options.html
+
+
+--------------------------------------------------------------------------------
+Summary of make-definition entities:
+
+    musp      fbr       fchum     fphA      fatg      atgts   
+    ts_dqf    parg_dqf  gl_dqf    cumm_dqf  grun_dqf  ogl_dqf 
+    fanth_dq  mpa       ged_dqf   ma_dqf    dilm      sil8L   
+    fo8L      fa8L      q8L       ma1_dqf   mstt      cfs     
+    cenjh     odi       qjL       dijL      jdjL      ctjL    
+    fojL      fajL      tts       cfsg      mfpv      mcpv    
+    cmpv      cfpv      capv      fcor      hmgts     mcbuf   
+    foHL      faHL      qHL       jdL     
+--------------------------------------------------------------------------------
+
+**warning ver099** no data for aqueous species, aq_output and aq_lagged_speciation disabled.
+
+--------------------------------------------------------------------------------
+Solution model summary:
+
+**warning ver114** the following endmembers are missing for Cpx(HGP):
+  mkbuf_d   crkjd_d   crjd_d    crdih     kess_d    ness_d  
+  cessh     kjdh      crfs_d    cren_d    fess_d    mess_d  
+
+**warning ver102** reformulated subcomposition [T'][A,C]  of Cpx(HGP) due to missing endmembers.
+
+
+**warning ver102** reformulated subcomposition TM+MC      of Cpx(HGP) due to missing endmembers.
+
+     708 pseudocompounds generated for: Cpx(HGP)  
+**warning ver114** the following endmembers are missing for Chl(W):
+  mnchl     ff3cli    f3clin  
+
+**warning ver102** reformulated subcomposition [M][M,T]   of Chl(W) due to missing endmembers.
+
+     122 pseudocompounds generated for: Chl(W)    
+      10 pseudocompounds generated for: O(HGP)    
+**warning ver114** the following endmembers are missing for Opx(HGP):
+  crjd_d    crdi_d    ness_d    cess_d    ojd       ffbuf_d 
+  obuf      crfs_d    crenh     facm_d    macm    
+
+**warning ver102** reformulated subcomposition [T'][A,C]  of Opx(HGP) due to missing endmembers.
+
+
+**warning ver102** reformulated subcomposition TM+MC      of Opx(HGP) due to missing endmembers.
+
+      40 pseudocompounds generated for: Opx(HGP)  
+**warning ver114** the following endmembers are missing for Gt(HGP):
+  ftig_d    tig       ctig_d    fkno_d    knor      ckno_d  
+  fkho_d    kho_d     andr    
+
+**warning ver050** reformulating prismatic solution: Gt(HGP)    because of missing endmembers. 
+(reformulation can be controlled explicitly by excluding additional endmembers).
+
+      18 pseudocompounds generated for: Gt(HGP)   
+**warning ver114** the following endmembers are missing for Fsp(HGP):
+  san     
+       4 pseudocompounds generated for: Fsp(HGP)  
+
+Total number of pseudocompounds:     902
+
+Summary of included solution models:
+
+Cpx(HGP)   Chl(W)     O(HGP)     Opx(HGP)   Gt(HGP)    Fsp(HGP)  
+--------------------------------------------------------------------------------
+** Starting exploratory computational stage **
+
+
+**warning ver093** SPECI2/Chl(W)     did not converge at:
+
+    P(bar) =  1.00000    
+    T(K) =  200.000    
+
+Iteration limit exceeded, result will be rejected.
+
+This warning can usually be ignored; when not, remedies include (best first):
+
+    1 - increase max_warn_limit to see how often/where the problem occurs
+    2 - increase convergence tolerance (function_tolerance_exp)
+    3 - increase iteration limit (speciation_max_it)
+
+
+**warning ver093** SPECI1/Chl(W)     did not converge at:
+
+    P(bar) =  1.00000    
+    T(K) =  200.000    
+
+Oscillating, result will be rejected.
+
+This warning can usually be ignored; when not, remedies include (best first):
+
+    1 - increase max_warn_limit to see how often/where the problem occurs
+    2 - increase convergence tolerance (function_tolerance_exp)
+    3 - increase iteration limit (speciation_max_it)
+
+
+**warning ver093** SPECI2/Chl(W)     did not converge at:
+
+    P(bar) =  1952.20    
+    T(K) =  200.000    
+
+Iteration limit exceeded, result will be rejected.
+
+This warning can usually be ignored; when not, remedies include (best first):
+
+    1 - increase max_warn_limit to see how often/where the problem occurs
+    2 - increase convergence tolerance (function_tolerance_exp)
+    3 - increase iteration limit (speciation_max_it)
+
+
+**warning ver093** SPECI1/Chl(W)     did not converge at:
+
+    P(bar) =  1952.20    
+    T(K) =  200.000    
+
+Oscillating, result will be rejected.
+
+This warning can usually be ignored; when not, remedies include (best first):
+
+    1 - increase max_warn_limit to see how often/where the problem occurs
+    2 - increase convergence tolerance (function_tolerance_exp)
+    3 - increase iteration limit (speciation_max_it)
+
+
+**warning ver093** SPECI2/Chl(W)     did not converge at:
+
+    P(bar) =  3903.39    
+    T(K) =  200.000    
+
+Iteration limit exceeded, result will be rejected.
+
+This warning can usually be ignored; when not, remedies include (best first):
+
+    1 - increase max_warn_limit to see how often/where the problem occurs
+    2 - increase convergence tolerance (function_tolerance_exp)
+    3 - increase iteration limit (speciation_max_it)
+
+
+**warning ver049** warning  93 will not be repeated for future instances of this problem.
+currently in routine: SPECI2
+
+To see how often this warning occurs increase max_warn_limit
+
+
+**warning ver093** SPECI1/Cpx(HGP)   did not converge at:
+
+    P(bar) =  7805.78    
+    T(K) =  200.000    
+
+Oscillating, low quality result will be used.
+
+This warning can usually be ignored; when not, remedies include (best first):
+
+    1 - increase max_warn_limit to see how often/where the problem occurs
+    2 - increase convergence tolerance (function_tolerance_exp)
+    3 - increase iteration limit (speciation_max_it)
+
+
+**warning ver093** SPECI1/Cpx(HGP)   did not converge at:
+
+    P(bar) =  11708.2    
+    T(K) =  200.000    
+
+Oscillating, low quality result will be used.
+
+This warning can usually be ignored; when not, remedies include (best first):
+
+    1 - increase max_warn_limit to see how often/where the problem occurs
+    2 - increase convergence tolerance (function_tolerance_exp)
+    3 - increase iteration limit (speciation_max_it)
+
+
+**warning ver093** SPECI1/Cpx(HGP)   did not converge at:
+
+    P(bar) =  11708.2    
+    T(K) =  200.000    
+
+Oscillating, low quality result will be used.
+
+This warning can usually be ignored; when not, remedies include (best first):
+
+    1 - increase max_warn_limit to see how often/where the problem occurs
+    2 - increase convergence tolerance (function_tolerance_exp)
+    3 - increase iteration limit (speciation_max_it)
+
+
+**warning ver093** SPECI1/Cpx(HGP)   did not converge at:
+
+    P(bar) =  50732.1    
+    T(K) =  200.000    
+
+Oscillating, low quality result will be used.
+
+This warning can usually be ignored; when not, remedies include (best first):
+
+    1 - increase max_warn_limit to see how often/where the problem occurs
+    2 - increase convergence tolerance (function_tolerance_exp)
+    3 - increase iteration limit (speciation_max_it)
+
+
+**warning ver093** SPECI1/Cpx(HGP)   did not converge at:
+
+    P(bar) =  54634.5    
+    T(K) =  200.000    
+
+Oscillating, low quality result will be used.
+
+This warning can usually be ignored; when not, remedies include (best first):
+
+    1 - increase max_warn_limit to see how often/where the problem occurs
+    2 - increase convergence tolerance (function_tolerance_exp)
+    3 - increase iteration limit (speciation_max_it)
+
+
+**warning ver049** warning  93 will not be repeated for future instances of this problem.
+currently in routine: SPECI1
+
+To see how often this warning occurs increase max_warn_limit
+
+
+**warning ver108** Did not converge to optimization_precision within optimizaton_max_it. The low quality result will be output.
+
+
+Current conditions:
+
+     T(K)     =   200.0000    
+     P(bar)   =   54634.46    
+
+
+
+**warning ver108** Did not converge to optimization_precision within optimizaton_max_it. The low quality result will be output.
+
+
+Current conditions:
+
+     T(K)     =   200.0000    
+     P(bar)   =   56585.66    
+
+
+
+**warning ver108** Did not converge to optimization_precision within optimizaton_max_it. The low quality result will be output.
+
+
+Current conditions:
+
+     T(K)     =   200.0000    
+     P(bar)   =   58536.85    
+
+
+
+**warning ver108** Did not converge to optimization_precision within optimizaton_max_it. The low quality result will be output.
+
+
+Current conditions:
+
+     T(K)     =   200.0000    
+     P(bar)   =   60488.05    
+
+
+
+**warning ver108** Did not converge to optimization_precision within optimizaton_max_it. The low quality result will be output.
+
+
+Current conditions:
+
+     T(K)     =   200.0000    
+     P(bar)   =   62439.24    
+
+
+
+**warning ver108** Did not converge to optimization_precision within optimizaton_max_it. The low quality result will be output.
+
+
+Current conditions:
+
+     T(K)     =   200.0000    
+     P(bar)   =   64390.44    
+
+
+
+**warning ver049** warning 108 will not be repeated for future instances of this problem.
+currently in routine: LPWARN
+
+To see how often this warning occurs increase max_warn_limit
+
+  2.4% done with low level grid.  4.8% done with low level grid.  7.1% done with low level grid.  9.5% done with low level grid. 11.9% done with low level grid. 14.3% done with low level grid. 16.7% done with low level grid. 19.0% done with low level grid. 21.4% done with low level grid. 23.8% done with low level grid. 26.2% done with low level grid. 28.6% done with low level grid. 31.0% done with low level grid. 33.3% done with low level grid. 35.7% done with low level grid. 38.1% done with low level grid. 40.5% done with low level grid. 42.9% done with low level grid. 45.2% done with low level grid. 47.6% done with low level grid. 50.0% done with low level grid. 52.4% done with low level grid. 54.8% done with low level grid. 57.1% done with low level grid. 59.5% done with low level grid. 61.9% done with low level grid. 64.3% done with low level grid. 66.7% done with low level grid. 69.0% done with low level grid. 71.4% done with low level grid. 73.8% done with low level grid. 76.2% done with low level grid. 78.6% done with low level grid. 81.0% done with low level grid. 83.3% done with low level grid. 85.7% done with low level grid. 88.1% done with low level grid. 90.5% done with low level grid. 92.9% done with low level grid. 95.2% done with low level grid. 97.6% done with low level grid.100.0% done with low level grid.
+--------------------------------------------------------------------------------
+Exploratory stage generated:
+
+    1302 compositions for: Cpx(HGP)  
+     186 compositions for: Chl(W)    
+      18 compositions for: O(HGP)    
+     295 compositions for: Opx(HGP)  
+     365 compositions for: Gt(HGP)   
+      68 compositions for: Fsp(HGP)  
+
+Total number of compositions:    2234
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+** Starting auto-refine computational stage **
+
+  2.4% done with low level grid.  4.8% done with low level grid.  7.1% done with low level grid.  9.5% done with low level grid. 11.9% done with low level grid. 14.3% done with low level grid. 16.7% done with low level grid. 19.0% done with low level grid. 21.4% done with low level grid. 23.8% done with low level grid. 26.2% done with low level grid. 28.6% done with low level grid. 31.0% done with low level grid. 33.3% done with low level grid. 35.7% done with low level grid. 38.1% done with low level grid. 40.5% done with low level grid. 42.9% done with low level grid. 45.2% done with low level grid. 47.6% done with low level grid. 50.0% done with low level grid. 52.4% done with low level grid. 54.8% done with low level grid. 57.1% done with low level grid. 59.5% done with low level grid. 61.9% done with low level grid. 64.3% done with low level grid. 66.7% done with low level grid. 69.0% done with low level grid. 71.4% done with low level grid. 73.8% done with low level grid. 76.2% done with low level grid. 78.6% done with low level grid. 81.0% done with low level grid. 83.3% done with low level grid. 85.7% done with low level grid. 88.1% done with low level grid. 90.5% done with low level grid. 92.9% done with low level grid. 95.2% done with low level grid. 97.6% done with low level grid.100.0% done with low level grid.
+
+
+Beginning grid refinement stage.
+
+   802 grid cells to be refined at grid level 2
+       ...working (   501 minimizations done)
+       ...working (  1003 minimizations done)
+       ...working (  1504 minimizations done)
+       refinement at level 2 involved   1975 minimizations
+  3739 minimizations required of the theoretical limit of    6889
+  1912 grid cells to be refined at grid level 3
+       ...working (    31 minimizations done)
+       ...working (   532 minimizations done)
+       ...working (  1033 minimizations done)
+       ...working (  1536 minimizations done)
+       ...working (  2038 minimizations done)
+       ...working (  2541 minimizations done)
+       ...working (  3045 minimizations done)
+       ...working (  3547 minimizations done)
+       ...working (  4048 minimizations done)
+       refinement at level 3 involved   4243 minimizations
+  7982 minimizations required of the theoretical limit of   27225
+  4146 grid cells to be refined at grid level 4
+       ...working (   307 minimizations done)
+       ...working (   809 minimizations done)
+       ...working (  1310 minimizations done)
+       ...working (  1812 minimizations done)
+       ...working (  2315 minimizations done)
+       ...working (  2817 minimizations done)
+       ...working (  3319 minimizations done)
+       ...working (  3821 minimizations done)
+       ...working (  4323 minimizations done)
+       ...working (  4824 minimizations done)
+       ...working (  5326 minimizations done)
+       ...working (  5829 minimizations done)
+       ...working (  6331 minimizations done)
+       ...working (  6834 minimizations done)
+       ...working (  7336 minimizations done)
+       ...working (  7837 minimizations done)
+       ...working (  8340 minimizations done)
+       refinement at level 4 involved   8618 minimizations
+ 16600 minimizations required of the theoretical limit of  108900
+--------------------------------------------------------------------------------
+     Timing                    min.         % of total
+
+  Static G calculation       0.63040            26.0
+  Dynamic G calculation      0.45563            18.8
+  Static LP                  0.60147E-01         2.5
+  Dynamic LP                 0.33274            13.7
+  Successive QP              0.91613            37.8
+  Total of above              2.3950            98.8
+  Total elapsed time          2.4241           100.0
+--------------------------------------------------------------------------------
+
+End of job: 1                                                                                                   
+
+--------------------------------------------------------------------------------
+
+    42588149
