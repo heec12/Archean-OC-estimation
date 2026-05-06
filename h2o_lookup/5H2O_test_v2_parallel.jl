@@ -1,7 +1,11 @@
-# 5H2O_test.jl
+# 5H2O_test_v2.jl
 # =======================
 # Runs Perple_X for each posterior bulk composition sample and builds
 # a P-T-H2O lookup table with uncertainty from compositional spread.
+# ver. 2 adapts 8 solution models,
+#
+# Needs to be run with multiple threads:
+#   julia --threads 4 5H2O_test_v2.jl
 #
 # Output format matches reference CSV:
 #   - Top row: empty cell, then T values in K (plain numbers, no units)
@@ -29,9 +33,9 @@ const SCENARIOS = [
 # const T_VEC     = collect(range(200.0, 1600.0, length=10))
 # const N_SAMPLES = 3
 
-# -- FULL RUN (80x80, all samples) --------------------------------------------
-const P_VEC     = collect(range(0.0001 * 10000, 8.0 * 10000, length=80))  # bar
-const T_VEC     = collect(range(200.0, 1600.0, length=80))                 # Kelvin
+# -- FULL RUN (40x40, all samples) --------------------------------------------
+const P_VEC     = collect(range(0.0001 * 10000, 8.0 * 10000, length=40))  # bar
+const T_VEC     = collect(range(273.0, 1600.0, length=40))                 # Kelvin
 const N_SAMPLES = 0   # 0 = use all available samples
 
 mkpath(OUTPUT_DIR)
@@ -116,13 +120,15 @@ for scenario in SCENARIOS
     n = (N_SAMPLES == 0) ? nrow(df_ens) : min(N_SAMPLES, nrow(df_ens))
     println("Running $n / $(nrow(df_ens)) ensemble compositions")
 
+    # wrap sampling part with the multithreads, each sample is independent
     bound_h2o_ensemble = fill(NaN, n, length(P_VEC), length(T_VEC))
-    n_failed = 0
+    n_failed = Threads.Atomic{Int}(0)
 
-    for i in 1:n
-        println("\n  Sample $i / $n")
+    Threads.@threads for i in 1:n
+        println("  Sample $i / $n (thread $(Threads.threadid()))")
 
         comp         = vcat(Vector{Float64}(df_ens[i, :]), H2O_WT)
+        # Each thread needs its own scratch directory to avoid file conflicts
         scratchdir_i = joinpath(SCRATCH_DIR, "$(scenario)_sample_$(i)")
         mkpath(scratchdir_i)
 
@@ -132,7 +138,7 @@ for scenario in SCENARIOS
                 comp,
                 ["SiO2","TiO2","Al2O3","FeO","MgO","CaO","Na2O","H2O"],
                 (1, 80000),
-                (200.0, 1600.0),
+                (273.0, 1600.0),
                 dataset         = "hp62ver.dat",
 #                 solution_phases = "O(HGP)\nCpx(HGP)\nOpx(HGP)\nGt(HGP)\nChl(W)\nEp(HP)\nPheng(HP)\nSp(HGP)\nFsp(HGP)\n",
                 solution_phases = "O(HGP)\nCpx(HGP)\nOpx(HGP)\nGt(HGP)\nFsp(HGP)\nChl(W)\nEp(HP)\nPheng(HP)\n",
@@ -140,24 +146,24 @@ for scenario in SCENARIOS
                 fluid_eos       = 5,
             )
 
-            n_ok = 0
+#             n_ok = 0
             for (j, P) in enumerate(P_VEC)
                 for (k, T) in enumerate(T_VEC)
                     pt   = perplex_query_point(scratchdir_i, P, T)
                     bh2o = parse_bound_h2o(pt)
                     bound_h2o_ensemble[i, j, k] = bh2o
-                    n_ok += 1
+#                     n_ok += 1
                 end
             end
-            println("    v $n_ok P-T points queried")
+            println("    v Sample $i done")
 
         catch e
             @warn "  Sample $i failed: $e"
-            n_failed += 1
+            Threads.atomic_add!(n_failed, 1)
         end
     end
 
-    println("\nFailed samples: $n_failed / $n")
+    println("Failed samples: $(n_failed[]) / $n")
 
     n_all_nan  = sum(all(isnan.(bound_h2o_ensemble[i,:,:])) for i in 1:n)
     n_cell_nan = count(isnan, bound_h2o_ensemble)
@@ -184,8 +190,22 @@ for scenario in SCENARIOS
     h2o_std  = [nanstd(bound_h2o_ensemble[:, j, k])
                 for j in 1:length(P_VEC), k in 1:length(T_VEC)]
 
-    write_lookup_table(h2o_mean, joinpath(OUTPUT_DIR, "h2o_bound_mean_$(scenario).csv"))
-    write_lookup_table(h2o_std,  joinpath(OUTPUT_DIR, "h2o_bound_std_$(scenario).csv"))
+    write_lookup_table(h2o_mean, joinpath(OUTPUT_DIR, "v2_h2o_bound_mean_$(scenario).csv"))
+    write_lookup_table(h2o_std,  joinpath(OUTPUT_DIR, "v2_h2o_bound_std_$(scenario).csv"))
+
+    nanpercentile(x, p) = (v = filter(!isnan, x); isempty(v) ? NaN : quantile(v, p/100))
+
+    h2o_p05  = [nanpercentile(bound_h2o_ensemble[:, j, k], 5)
+                for j in 1:length(P_VEC), k in 1:length(T_VEC)]
+    h2o_p50  = [nanpercentile(bound_h2o_ensemble[:, j, k], 50)
+                for j in 1:length(P_VEC), k in 1:length(T_VEC)]
+    h2o_p95  = [nanpercentile(bound_h2o_ensemble[:, j, k], 95)
+                for j in 1:length(P_VEC), k in 1:length(T_VEC)]
+
+    write_lookup_table(h2o_p05,  joinpath(OUTPUT_DIR, "v2_h2o_p05_$(scenario).csv"))
+    write_lookup_table(h2o_p50,  joinpath(OUTPUT_DIR, "v2_h2o_p50_$(scenario).csv"))
+    write_lookup_table(h2o_p95,  joinpath(OUTPUT_DIR, "v2_h2o_p95_$(scenario).csv"))
+
 end
 
 println("\nDone. All lookup tables saved to $OUTPUT_DIR")

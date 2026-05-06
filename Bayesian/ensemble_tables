@@ -1,0 +1,35 @@
+using CSV, DataFrames, Statistics
+
+# Assume you've already run your ensemble and collected results into a 3D array:
+# h2o_ensemble[i, j, k] = H2O at ensemble member i, P-node j, T-node k
+# shape: (n_ensemble, n_P, n_T)
+
+# Your P and T grids (must match what you used in Perple_X runs)
+P_grid = collect(range(0.5, 4.0, length=80))   # GPa
+T_grid = collect(range(400.0, 1000.0, length=80)) .+ 273.15  # K
+
+# --- Compute percentiles along the ensemble axis (dim=1) ---
+p05  = mapslices(x -> quantile(x, 0.05), h2o_ensemble, dims=1)[1,:,:]
+p50  = mapslices(x -> quantile(x, 0.50), h2o_ensemble, dims=1)[1,:,:]
+p95  = mapslices(x -> quantile(x, 0.95), h2o_ensemble, dims=1)[1,:,:]
+
+# --- Export function matching your reference format ---
+# (empty top-left cell, T in K as column headers, P in GPa as rows, \r line endings)
+function export_lookup_table(matrix, P_grid, T_grid, filepath)
+    T_headers = ["" ; string.(round.(T_grid, digits=2))]
+
+    open(filepath, "w") do io
+        # Header row: empty cell + T values
+        write(io, join(T_headers, ",") * "\r")
+        # Data rows: P value + H2O values
+        for (j, p) in enumerate(P_grid)
+            row = [string(round(p, digits=4)) ; string.(round.(matrix[j,:], digits=6))]
+            write(io, join(row, ",") * "\r")
+        end
+    end
+    println("Saved: $filepath")
+end
+
+export_lookup_table(p05, P_grid, T_grid, "lookup_p05.csv")
+export_lookup_table(p50, P_grid, T_grid, "lookup_p50.csv")
+export_lookup_table(p95, P_grid, T_grid, "lookup_p95.csv")

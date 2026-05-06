@@ -1,7 +1,8 @@
-# 5H2O_test.jl
+# 5H2O_test_v2.jl
 # =======================
 # Runs Perple_X for each posterior bulk composition sample and builds
 # a P-T-H2O lookup table with uncertainty from compositional spread.
+# ver. 2 adapts 8 solution models,
 #
 # Output format matches reference CSV:
 #   - Top row: empty cell, then T values in K (plain numbers, no units)
@@ -29,9 +30,9 @@ const SCENARIOS = [
 # const T_VEC     = collect(range(200.0, 1600.0, length=10))
 # const N_SAMPLES = 3
 
-# -- FULL RUN (80x80, all samples) --------------------------------------------
-const P_VEC     = collect(range(0.0001 * 10000, 8.0 * 10000, length=80))  # bar
-const T_VEC     = collect(range(200.0, 1600.0, length=80))                 # Kelvin
+# -- FULL RUN (40x40, all samples) --------------------------------------------
+const P_VEC     = collect(range(0.0001 * 10000, 8.0 * 10000, length=40))  # bar
+const T_VEC     = collect(range(273.0, 1600.0, length=40))                 # Kelvin
 const N_SAMPLES = 0   # 0 = use all available samples
 
 mkpath(OUTPUT_DIR)
@@ -184,8 +185,22 @@ for scenario in SCENARIOS
     h2o_std  = [nanstd(bound_h2o_ensemble[:, j, k])
                 for j in 1:length(P_VEC), k in 1:length(T_VEC)]
 
-    write_lookup_table(h2o_mean, joinpath(OUTPUT_DIR, "h2o_bound_mean_$(scenario).csv"))
-    write_lookup_table(h2o_std,  joinpath(OUTPUT_DIR, "h2o_bound_std_$(scenario).csv"))
+    write_lookup_table(h2o_mean, joinpath(OUTPUT_DIR, "v2_h2o_bound_mean_$(scenario).csv"))
+    write_lookup_table(h2o_std,  joinpath(OUTPUT_DIR, "v2_h2o_bound_std_$(scenario).csv"))
+
+    nanpercentile(x, p) = (v = filter(!isnan, x); isempty(v) ? NaN : quantile(v, p/100))
+
+    h2o_p05  = [nanpercentile(bound_h2o_ensemble[:, j, k], 5)
+                for j in 1:length(P_VEC), k in 1:length(T_VEC)]
+    h2o_p50  = [nanpercentile(bound_h2o_ensemble[:, j, k], 50)
+                for j in 1:length(P_VEC), k in 1:length(T_VEC)]
+    h2o_p95  = [nanpercentile(bound_h2o_ensemble[:, j, k], 95)
+                for j in 1:length(P_VEC), k in 1:length(T_VEC)]
+
+    write_lookup_table(h2o_p05,  joinpath(OUTPUT_DIR, "v2_h2o_p05_$(scenario).csv"))
+    write_lookup_table(h2o_p50,  joinpath(OUTPUT_DIR, "v2_h2o_p50_$(scenario).csv"))
+    write_lookup_table(h2o_p95,  joinpath(OUTPUT_DIR, "v2_h2o_p95_$(scenario).csv"))
+
 end
 
 println("\nDone. All lookup tables saved to $OUTPUT_DIR")
