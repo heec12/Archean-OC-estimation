@@ -18,9 +18,9 @@ using CSV, DataFrames, Statistics
 # =============================================================================
 # SETTINGS
 # =============================================================================
-const DATA_DIR    = "/Users/hchoi342/Documents/Archean-OC/Bayesian/bayesian_lower_crust_outputs"
-const OUTPUT_DIR  = "/Users/hchoi342/Documents/Archean-OC/h2o_lookup"
-const SCRATCH_DIR = "/tmp/perplex_ensemble"
+const DATA_DIR    = "/storage/home/hcoda1/7/hchoi342/scratch/Archean-OC-estimation/Bayesian/bayesian_lower_crust_outputs"
+const OUTPUT_DIR  = "/storage/home/hcoda1/7/hchoi342/scratch/Archean-OC-estimation/h2o_lookup"
+const SCRATCH_DIR = "/storage/home/hcoda1/7/hchoi342/scratch/Archean-OC-estimation/perplex_ensemble"
 const H2O_WT      = 5.0   # wt% H2O added to every bulk composition
 
 const SCENARIOS = [
