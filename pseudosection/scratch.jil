@@ -1,0 +1,191 @@
+using StatGeochem, CSV, DataFrames, Statistics, LinearAlgebra, Plots
+
+# const P_VEC = collect(range(0.0001 * 10000, 8.0 * 10000, length=80))
+# const T_VEC = collect(range(200.0, 1600.0, length=80))
+const P_VEC = collect(range(0.0001 * 10000, 8.0 * 10000, length=40))  # bar
+const T_VEC = collect(range(273.0, 1600.0, length=40))                 # Kelvin
+
+scratchdir = "/tmp/perplex_ensemble/homogeneous_crust_sample_41"
+
+# ── Convert to P-T grids ──────────────────────────────────────────────────────
+
+# Build 2D grid manually — query each P slice at all T values
+n_P = length(P_VEC)
+n_T = length(T_VEC)
+
+# Get phase names from a single point first
+test = perplex_query_modes(scratchdir, [P_VEC[1]], [T_VEC[1]])
+phase_names = [k for k in keys(test) if k ∉ ["T(K)", "P(bar)", "elements"]]
+println("Phases found: ", phase_names)
+
+# Storage
+phase_grids = Dict(p => fill(NaN, n_P, n_T) for p in phase_names)
+h2o_grid    = fill(NaN, n_P, n_T)
+T_ax        = fill(NaN, n_P, n_T)
+P_ax        = fill(NaN, n_P, n_T)
+
+for (j, P) in enumerate(P_VEC)
+    result = perplex_query_modes(scratchdir, fill(P, n_T), T_VEC)
+    sys    = perplex_query_system(scratchdir, fill(P, n_T), T_VEC)  # renamed to sys
+    for phase in phase_names
+        if haskey(result, phase)
+            phase_grids[phase][j, :] = result[phase]
+        end
+    end
+    if haskey(sys, "H2O")
+        h2o_grid = haskey(phase_grids, "H2O") ? phase_grids["H2O"] : fill(NaN, n_P, n_T)
+    end
+end
+
+# Free fluid H2O (h2oL = liquid water, H2O = fluid)
+free_fluid_grid = get(phase_grids, "h2oL", fill(0.0, n_P, n_T))
+
+# Bound H2O — sum vol% of hydrous solid phases
+hydrous_solids = ["Chl(W)", "law", "zo", "cz", "phA", "liz", "br"]
+bound_h2o_grid = fill(0.0, n_P, n_T)
+for phase in hydrous_solids
+    if haskey(phase_grids, phase)
+        v = phase_grids[phase]
+        bound_h2o_grid .+= replace(v, NaN => 0.0)
+    end
+end
+
+println("Free fluid range: ", minimum(free_fluid_grid), " to ", maximum(free_fluid_grid))
+println("Bound H2O (sum vol%) range: ", minimum(bound_h2o_grid), " to ", maximum(bound_h2o_grid))
+
+T_K   = T_VEC
+P_GPa = P_VEC ./ 10000
+
+# ── Hydrous phases — H2O content ─────────────────────────────────────────────
+# Phases that carry water in your system
+hydrous = ["Chl(W)", "Ep(HP)", "law", "zo", "cz", "phA", "liz", "br", "H2O"]
+
+# Total bound H2O from system (wt%)
+h2o_sys = reshape(system["H2O"], length(P_VEC), length(T_VEC))
+
+# Individual phase modes (vol%)
+phase_grids = Dict{String, Matrix{Float64}}()
+for phase in keys(modes)
+    if phase ∉ ["T(K)", "P(bar)", "elements"]
+        phase_grids[phase] = reshape(modes[phase], length(P_VEC), length(T_VEC))
+    end
+end
+
+# ── Load H2O uncertainty from ensemble CSV ────────────────────────────────────
+std_path  = "/Users/hchoi342/Documents/Archean-OC/h2o_lookup/h2o_bound_std_homogeneous_crust.csv"
+mean_path = "/Users/hchoi342/Documents/Archean-OC/h2o_lookup/h2o_bound_mean_homogeneous_crust.csv"
+
+# Read CR-only CSV
+function read_cr_csv(path)
+    raw  = read(path, String)
+    rows = split(raw, '\r')
+    header = split(rows[1], ',')[2:end]   # skip empty first cell
+    data = zeros(Float64, length(rows)-1, length(header))
+    p_vals = Float64[]
+    for (i, row) in enumerate(rows[2:end])
+        cells = split(row, ',')
+        push!(p_vals, parse(Float64, cells[1]))
+        for (j, c) in enumerate(cells[2:end])
+            data[i, j] = isempty(c) ? NaN : parse(Float64, c)
+        end
+    end
+    return p_vals, parse.(Float64, header), data
+end
+
+p_ens, t_ens, h2o_mean_ens = read_cr_csv(mean_path)
+_,     _,     h2o_std_ens  = read_cr_csv(std_path)
+
+# ── PLOT 1: Phase diagram coloured by dominant hydrous phase ──────────────────
+# Build a colour map: each P-T cell coloured by the hydrous phase with most vol%
+dominant = fill("", length(P_VEC), length(T_VEC))
+for j in 1:length(T_VEC), i in 1:length(P_VEC)
+    best_phase = ""
+    best_vol   = 0.0
+    for phase in hydrous
+        if haskey(phase_grids, phase)
+            v = phase_grids[phase][i, j]
+            if !isnan(v) && v > best_vol
+                best_vol   = v
+                best_phase = phase
+            end
+        end
+    end
+    dominant[i, j] = best_phase
+end
+
+# Assign integer codes for plotting
+all_phases = unique(filter(!isempty, vec(dominant)))
+code = Dict(p => i for (i, p) in enumerate(all_phases))
+push!(code, "" => 0)
+dom_code = [code[dominant[i,j]] for i in 1:length(P_VEC), j in 1:length(T_VEC)]
+
+p1 = heatmap(
+    T_K .- 273.15, P_GPa, dom_code,
+    c          = :tab10,
+    xlabel     = "Temperature (°C)",
+    ylabel     = "Pressure (GPa)",
+    title      = "Dominant hydrous phase\n(homogeneous crust, sample 41)",
+    colorbar   = false,
+    yflip      = false,
+    clims      = (0, length(all_phases)),
+)
+# Add phase name annotations
+for (phase, idx) in code
+    isempty(phase) && continue
+    # find centroid of this phase field
+    mask = dom_code .== idx
+    if any(mask)
+        ti = mean(findall(mask) .|> x -> x[2])
+        pi = mean(findall(mask) .|> x -> x[1])
+        annotate!(p1, T_K[round(Int,ti)] - 273.15, P_GPa[round(Int,pi)],
+                  text(phase, 6, :white, :center))
+    end
+end
+
+# ── PLOT 2: H2O content (wt%) from representative run ────────────────────────
+p2 = heatmap(
+    T_K .- 273.15, P_GPa, h2o_sys,
+    c        = :blues,
+    xlabel   = "Temperature (°C)",
+    ylabel   = "Pressure (GPa)",
+    title    = "Bound H₂O wt%\n(representative run, sample 41)",
+    colorbar_title = "wt% H₂O",
+)
+
+# ── PLOT 3: H2O uncertainty (std) from ensemble ───────────────────────────────
+p3 = heatmap(
+    t_ens .- 273.15, p_ens, h2o_std_ens,
+    c        = :heat,
+    xlabel   = "Temperature (°C)",
+    ylabel   = "Pressure (GPa)",
+    title    = "H₂O uncertainty (1σ, wt%)\n(200-sample ensemble)",
+    colorbar_title = "σ H₂O wt%",
+)
+
+# ── PLOT 4: H2O mean from ensemble with uncertainty contours ──────────────────
+p4 = heatmap(
+    t_ens .- 273.15, p_ens, h2o_mean_ens,
+    c        = :blues,
+    xlabel   = "Temperature (°C)",
+    ylabel   = "Pressure (GPa)",
+    title    = "Ensemble mean H₂O wt%\nwith 1σ uncertainty contours",
+    colorbar_title = "wt% H₂O",
+)
+contour!(p4, t_ens .- 273.15, p_ens, h2o_std_ens,
+    levels     = 5,
+    color      = :white,
+    linewidth  = 1,
+    linestyle  = :dash,
+    label      = "1σ",
+)
+
+# ── Combine and save ──────────────────────────────────────────────────────────
+fig = plot(p1, p2, p3, p4,
+    layout = (2, 2),
+    size   = (1400, 1000),
+    margin = 5Plots.mm,
+)
+
+savefig(fig, "/Users/hchoi342/Documents/Archean-OC/pseudosection_uncertainty.png")
+println("Saved: pseudosection_uncertainty.png")
+
