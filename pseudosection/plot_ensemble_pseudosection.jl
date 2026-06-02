@@ -32,7 +32,8 @@ using StatGeochem, CSV, DataFrames, Statistics, LinearAlgebra, Plots
 
 # v2 ensemble CSV files (CR-only format, produced by the Perple_X Julia loop)
 const H2O_LOOKUP_DIR = "/Users/hchoi342/Documents/Archean-OC/h2o_lookup"
-const SCENARIO       = "homogeneous_crust"
+# const SCENARIO       = "homogeneous_crust"
+const SCENARIO       = "layered_cumulate_lower_crust"
 
 # Bayesian posterior ensemble (one row per Perple_X sample, 7 oxide columns).
 # Used to identify the sample whose bulk composition is closest to the p50
