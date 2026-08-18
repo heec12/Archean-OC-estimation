@@ -14,6 +14,16 @@ Two-stage sampling (v2.2):
 After sampling, exports posterior bulk composition ensembles as CSV
 files ready for Perple_X ensemble runs.
 
+Versioning note
+---------------
+This is the Bayesian stage. Its outputs (the ensemble, traces, summaries)
+belong to the BAYESIAN model version, which is independent of the Perple_X
+solution-model version tracked by the Julia lookup script (5H2O_test_vN).
+The ensemble is therefore written under a fixed, unversioned name and is
+shared across all Perple_X versions. If you change the Bayesian model
+itself and want to keep both ensembles, separate them with --output (one
+directory per Bayesian model), not with the Perple_X version tag.
+
 Usage
 -----
     python mass_balance_7oxides.py --data komatiitic_basalt_subset.xlsx
@@ -446,7 +456,10 @@ def save_outputs(output_dir, uc_trace, traces, summaries,
 
     Ensemble files (ensemble_<scenario>.csv) contain ENSEMBLE_SIZE rows,
     each a posterior draw of x_bulk (wt%, 7 oxides), ready to be fed into
-    the Perple_X Julia loop.
+    the Perple_X Julia loop. The ensemble is unversioned: it is a single
+    Bayesian artifact shared across all Perple_X solution-model versions.
+    To keep multiple Bayesian models side by side, use a separate --output
+    directory per model rather than a filename version tag.
     """
     os.makedirs(output_dir, exist_ok=True)
 

@@ -1,11 +1,10 @@
-# 5H2O_test_v2_parallel.jl
+# 5H2O_test_v1_parallel.jl
 # =======================
 # Runs Perple_X for each posterior bulk composition sample and builds
 # a P-T-H2O lookup table with uncertainty from compositional spread.
-# ver. 2 adapts 8 solution models.
 #
 # Needs to be run with multiple threads:
-#   julia --threads 4 5H2O_test_v2_parallel.jl
+#   julia --threads 4 5H2O_test_v1_parallel.jl
 #
 # Versioning:
 #   PERPLEX_VERSION is parsed from this script's own filename — the "_vN"
@@ -161,8 +160,8 @@ for scenario in SCENARIOS
                 (1, 80000),
                 (273.0, 1600.0),
                 dataset = "hp62ver.dat",
-                # solution_phases = "O(HGP)\nCpx(HGP)\nOpx(HGP)\nGt(HGP)\nChl(W)\nEp(HP)\nPheng(HP)\nSp(HGP)\nFsp(HGP)\n",
-                solution_phases = "O(HGP)\nCpx(HGP)\nnCpx(HGP)\nOpx(HGP)\nGt(HGP)\nFsp(HGP)\nSp(HGP)\nChl(W)\nEp(HP)\nAmph(DPW)\nT\n",
+                solution_phases = "O(HGP)\nCpx(HGP)\nOpx(HGP)\nGt(HGP)\nChl(W)\nEp(HP)\nPheng(HP)\nSp(HGP)\nFsp(HGP)\n",
+                # solution_phases = "O(HGP)\nCpx(HGP)\nOpx(HGP)\nGt(HGP)\nFsp(HGP)\nChl(W)\nEp(HP)\nPheng(HP)\n",
                 excludes = "ts\nparg\ngl\nged\nfanth\n",
                 fluid_eos = 5,
             )
