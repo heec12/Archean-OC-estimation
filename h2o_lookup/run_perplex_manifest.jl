@@ -165,6 +165,11 @@ end
 
 const MANIFEST_PATH = OPTS["manifest"]
 const SCRATCH_DIR   = OPTS["scratch"]
+
+# Scratch dirs are deleted after each successful run by default. Set
+# --keep-scratch true only when debugging one composition: keeping all of them
+# needs several TB.
+const KEEP_SCRATCH = lowercase(get(OPTS, "keep-scratch", "false")) in ("true", "1", "yes")
 const OUTPUT_DIR    = isempty(OPTS["outdir"]) ?
     joinpath(BASE, "h2o_runs", PERPLEX_VERSION) : OPTS["outdir"]
 
@@ -324,6 +329,27 @@ function run_one(row, scratch_root::String, out_dir::String)
     df = DataFrame(rows)
     CSV.write(out_path, df)
 
+    # Delete the Perple_X working directory once the table is safely written.
+    #
+    # A scratch dir is ~11 MB, so 192 runs is only a couple of GB -- not a
+    # crisis, but the v1 and v2 ensembles left 800 stale directories behind and
+    # there is no reason to accumulate more. The extracted P-T table is the
+    # product; the working files are regenerable and nothing downstream reads
+    # them.
+    #
+    # Order matters: CSV.write comes first, so a crash mid-cleanup costs a
+    # scratch dir, never a result. Pass --keep-scratch true to retain them when
+    # debugging a specific composition.
+    if KEEP_SCRATCH
+        @info "  keeping scratch for $run_id at $scratchdir"
+    else
+        try
+            rm(scratchdir, recursive = true, force = true)
+        catch e
+            @warn "  could not remove scratch for $run_id" exception = e
+        end
+    end
+
     n_nan = count(isnan, df.h2o_solid)
     n_unsat = count(!, df.saturated)
     @printf("  [done] %s  NaN %d/%d  undersaturated %d/%d\n",
@@ -353,6 +379,27 @@ println("  grid         : $(length(P_VEC)) P x $(length(T_VEC)) T")
 println("  threads      : $(Threads.nthreads())")
 println("  solutions    : ", replace(strip(SOLUTION_PHASES), "\n" => ", "))
 flush(stdout)
+
+println("  keep scratch : $KEEP_SCRATCH")
+
+# Preflight. Measured size of one 8-component, 40x40 Perple_X scratch dir is
+# about 11 MB (v1 ensemble on Phoenix), so budget ~15 MB per run. With cleanup
+# on, only a few exist at once; with --keep-scratch, all of them do.
+const SCRATCH_GB_PER_RUN = 0.015
+
+try
+    avail_kb = parse(Int, split(readchomp(`df -P -k $SCRATCH_DIR`), '\n')[2] |> x -> split(x)[4])
+    avail_gb = avail_kb / 1024 / 1024
+    @printf("  free scratch : %.1f GB\n", avail_gb)
+    needed = KEEP_SCRATCH ? SCRATCH_GB_PER_RUN * 250 :
+                            SCRATCH_GB_PER_RUN * Threads.nthreads() * 4
+    if avail_gb < max(needed, 5.0)
+        @warn @sprintf("Only %.1f GB free (need ~%.1f GB plus room for output). " *
+                       "Check `pace-quota` before running.", avail_gb, needed)
+    end
+catch
+    println("  free scratch : (could not determine)")
+end
 
 manifest = CSV.read(MANIFEST_PATH, DataFrame)
 println("  manifest rows: $(nrow(manifest))")
