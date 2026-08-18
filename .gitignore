@@ -1,1 +1,28 @@
 Perple_X-7.1.9/
+
+# OS / IDE
+.DS_Store
+**/.DS_Store
+.idea/
+**/.idea/
+
+# Perple_X working files (keep solution_model.dat + hp62ver.dat)
+perplex_scratch/**/*.blk
+perplex_scratch/**/*.plt
+perplex_scratch/**/*.arf
+perplex_scratch/**/*.tim
+perplex_scratch/**/*.tof
+perplex_scratch/**/*.log
+perplex_scratch/**/*_auto_refine.txt
+perplex_scratch/**/*_seismic_data.txt
+perplex_scratch/**/*.bat
+perplex_ensemble/
+
+# New pipeline bulk outputs
+h2o_runs/
+response_outputs/
+design_outputs/*.nc
+design_outputs/*.png
+logs/
+.DS_Store
+perplex_sensitivity/
