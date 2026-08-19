@@ -71,6 +71,21 @@ const PERPLEX_COMPONENTS = ["SiO2", "TiO2", "Al2O3", "FeO", "MgO", "CaO", "Na2O"
 # "how much of my input got consumed".
 const H2O_EXCESS = 20.0
 
+# Names Perple_X may use for the free aqueous fluid in the phase block.
+#
+# VERIFIED FROM SMOKE TEST OUTPUT: with fluid_eos = 5 and hp62ver.dat, the
+# fluid prints as "H2O". `h2oL` is the endmember label in the thermodynamic
+# data file, NOT what appears in the phase list -- testing for it alone marks
+# every cell undersaturated and masks the entire dataset to NaN in
+# postprocessing. The earlier pipeline made the same class of error looking
+# for a phase named "fluid".
+#
+# Matching a set rather than one string so a change of fluid_eos does not
+# silently break the saturation check. Note this is only used for the
+# saturation flag: bound H2O comes from the "Solid Only" column, which is
+# independent of the phase name.
+const FLUID_PHASE_NAMES = ("H2O", "h2oL", "fluid", "F", "WADD")
+
 # Below this free-fluid wt% a cell is treated as undersaturated / censored.
 const FLUID_PRESENT_THRESHOLD = 0.01
 
@@ -225,7 +240,7 @@ function parse_point(point_str::String)
                 wt = tryparse(Float64, tokens[2])
                 if wt !== nothing
                     n_phases += 1
-                    if tokens[1] == "h2oL"
+                    if tokens[1] in FLUID_PHASE_NAMES
                         fluid_wt = wt
                     end
                 end
