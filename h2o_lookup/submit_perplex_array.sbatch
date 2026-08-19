@@ -1,7 +1,11 @@
-#!/bin/bash
+#!/bin/bash -l
+# The -l (login shell) matters: SLURM runs batch scripts as a NON-login shell
+# by default, so /etc/profile.d is never sourced and `module` is undefined.
+# Without it, `module load julia` fails with "command not found" and the job
+# dies in about one second.
 #SBATCH --job-name=archean_h2o
 #SBATCH --account=gts-ssim33-atlas
-#SBATCH --partition=inferno
+#SBATCH --partition=cpu-medium
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
@@ -34,8 +38,30 @@ echo "array task  : ${SLURM_ARRAY_TASK_ID} / ${SLURM_ARRAY_TASK_COUNT}"
 echo "manifest    : ${MANIFEST}"
 echo "started     : $(date)"
 
-# --project points at the h2o_lookup environment
-stdbuf -oL -eL julia --project="${BASE}/h2o_lookup" \
+# Julia lives at the REPO ROOT environment (Project.toml + Manifest.toml are
+# there, and that is the one with StatGeochem). h2o_lookup/Project.toml exists
+# too but does not resolve StatGeochem -- using it gives
+# "Package StatGeochem not found in current path".
+#
+# Precompile interactively before submitting:
+#     julia --project=. -e 'using StatGeochem, StatGeochem.Perple_X_jll'
+# The first precompile takes ~6 minutes and would otherwise happen inside the
+# first array task, where it looks indistinguishable from a hang.
+#
+# TODO: replace with whatever makes julia available on a compute node in your
+# setup -- a `module load julia`, or a PATH export for a local install. A
+# fresh compute-node shell does not have it.
+# Pinned rather than bare `module load julia`: the Phoenix default is marked
+# (D) and can move between 1.10.1 / 1.11.3 / 1.12.5. Manifest.toml was
+# resolved under a specific version, and a silent switch means a full
+# recompile at best and a resolution failure at worst. Change this line only
+# together with a deliberate Manifest.toml update.
+module load julia/1.12.5
+command -v julia >/dev/null || { echo "ERROR: julia not on PATH after module load"; exit 1; }
+echo "julia       : $(julia --version)  ($(command -v julia))"
+module list 2>&1 | sed 's/^/  module: /'
+
+stdbuf -oL -eL julia --project="${BASE}" \
     --threads "${SLURM_CPUS_PER_TASK}" \
     "${SCRIPT}" \
     --manifest "${MANIFEST}" \
