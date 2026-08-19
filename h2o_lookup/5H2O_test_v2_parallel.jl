@@ -1,228 +1,351 @@
-# 5H2O_test_v2_parallel.jl
-# =======================
-# Runs Perple_X for each posterior bulk composition sample and builds
-# a P-T-H2O lookup table with uncertainty from compositional spread.
-# ver. 2 adapts 8 solution models.
-#
-# Needs to be run with multiple threads:
-#   julia --threads 4 5H2O_test_v2_parallel.jl
-#
-# Versioning:
-#   PERPLEX_VERSION is parsed from this script's own filename — the "_vN"
-#   token (e.g. 5H2O_test_v2_parallel.jl -> "v2"). It tracks the Perple_X
-#   SOLUTION-MODEL version and tags ONLY the things that change with it:
-#   the lookup tables and the scratch directories. So this exact file can be
-#   copied to 5H2O_test_v1_parallel.jl and it will pick up "v1" with no edits.
-#
-#   The ensemble is a BAYESIAN artifact — it does not change when the
-#   Perple_X solution models change, so it is read from a fixed, unversioned
-#   name (ensemble_<scenario>.csv) and shared across all Perple_X versions.
-#   If you ever change the Bayesian model itself, version the ensemble on its
-#   own separate axis (not with PERPLEX_VERSION).
-#
-# Output format matches reference CSV:
-# - Top row: empty cell, then T values in K (plain numbers, no units)
-# - First column: P in GPa (plain numbers, no units)
-# - CR-only line endings (\r)
+#=
+5H2O_test_v2_parallel.jl
+========================
+Full 200-sample posterior ensemble of bound-H2O P-T lookup tables for the
+v2-amphibole solution model set (v1-effective + cAmph(G)).
+
+Justification (from the sensitivity ladder): adding cAmph(G) dominates the
+bound-H2O budget across the greenschist-amphibolite-blueschist window;
+talc (T) and spinel (Sp(WPC)) contribute little, so the scientifically
+essential v2 case is "v1 plus an amphibole model." This script runs that
+case over the full posterior ensemble to propagate Bayesian bulk-composition
+uncertainty into the P-T-H2O lookup tables.
+
+KEY DIFFERENCE FROM THE LADDER SCRIPT
+  Bound H2O is read in ONE werami call per sample (2-D grid mode, property
+  36, system composition, fluid EXCLUDED) instead of 1600 point queries.
+  Verified against Perple_X 7.1.9: the system H2O,wt% column with fluid
+  excluded equals bound H2O (cold nodes -> full bound, hot nodes -> 0).
+  Falls back to per-point queries if QUERY_MODE == :point.
+
+Verified solution-phase set (Perple_X 7.1.9 + hp62ver.dat + v719 models):
+  do NOT use Amph(DPW) (vertex ver017 prompt -> stdin EOF crash),
+  Sp(HGP) (needs ds633 make defs), Ep(HP)/Pheng(HP) (need O2/K2O).
+
+Usage:
+    julia --project=. -t 10 5H2O_test_v2_parallel.jl
+    # or on PACE:  export JULIA_NUM_THREADS=$SLURM_CPUS_PER_TASK
+=#
 
 using StatGeochem
-using CSV, DataFrames, Statistics
+using StatGeochem.Perple_X_jll
+using DelimitedFiles
+using Printf
 
 # =============================================================================
-# SETTINGS
+# 1. CONFIG
 # =============================================================================
-# Perple_X solution-model version, taken from this file's name: the "_vN"
-# token. 5H2O_test_v1_parallel.jl -> "v1" and 5H2O_test_v2_parallel.jl -> "v2"
-# automatically, with the same code in both files. Tags lookup tables and
-# scratch dirs only — NOT the (Bayesian) ensemble input.
 const PERPLEX_VERSION = let
-    fname = basename(@__FILE__)
-    m = match(r"_v(\d+)", fname)
-    m === nothing && error("Could not parse a _vN version token from filename: $fname")
-    "v" * m.captures[1]
+    # Derive "v2" from 5H2O_test_v2_parallel.jl (Perple_X solution-model axis).
+    m = match(r"(v\d+\w*?)_parallel", basename(@__FILE__))
+    m === nothing ? "v2" : m.captures[1]
 end
 
-const DATA_DIR   = "/storage/home/hcoda1/7/hchoi342/scratch/Archean-OC-estimation/Bayesian/bayesian_lower_crust_outputs"
-const OUTPUT_DIR = "/storage/home/hcoda1/7/hchoi342/scratch/Archean-OC-estimation/h2o_lookup"
-const SCRATCH_DIR = "/storage/home/hcoda1/7/hchoi342/scratch/Archean-OC-estimation/perplex_ensemble"
+# Bayesian artifacts are UNVERSIONED (shared across Perple_X versions).
+const BAYES_DIR = get(ENV, "BAYES_DIR",
+    joinpath(dirname(@__DIR__), "Bayesian", "bayesian_lower_crust_outputs"))
 
-const H2O_WT = 5.0   # wt% H2O added to every bulk composition
+const SCRATCH_TOP = joinpath(dirname(@__DIR__), "perplex_ensemble")
+const OUT_DIR     = joinpath(dirname(@__DIR__), "lookup_tables",
+                             "$(PERPLEX_VERSION)")
 
-const SCENARIOS = [
-    "homogeneous_crust",
-    "layered_cumulate_lower_crust",
-]
+const SCENARIOS = ["homogeneous_crust", "layered_cumulate_lower_crust"]
 
-# -- QUICK TEST (10x10, 3 samples) --------------------------------------------
-# const P_VEC = collect(range(0.0001 * 10000, 8.0 * 10000, length=10))
-# const T_VEC = collect(range(200.0, 1600.0, length=10))
-# const N_SAMPLES = 3
+# 7-oxide NCFMAST + H2O. hp62ver.dat names are CASE-SENSITIVE, mixed-case.
+const OXIDES   = ["SiO2", "TiO2", "Al2O3", "FeO", "MgO", "CaO", "Na2O"]
+const ELEMENTS = vcat(OXIDES, "H2O")
 
-# -- FULL RUN (40x40, all samples) --------------------------------------------
-const P_VEC = collect(range(0.0001 * 10000, 8.0 * 10000, length=40))   # bar
-const T_VEC = collect(range(273.0, 1600.0, length=40))                  # Kelvin
-const N_SAMPLES = 0   # 0 = use all available samples
+# >>> Match these to your downstream / ladder settings.
+const H2O_WT   = 5.0
+const T_RANGE  = (473.15, 1473.15)   # K
+const P_RANGE  = (500.0, 30000.0)    # bar (0.05-3.0 GPa)
+const NT = 40                        # canonical output T nodes
+const NP = 40                        # canonical output P nodes
+const XNODES = 40                    # vertex exploratory grid (x = T)
+const YNODES = 40
 
-mkpath(OUTPUT_DIR)
-mkpath(SCRATCH_DIR)
+const DATASET  = "hp62ver.dat"
+const EXCLUDES = "ged\nfanth\ngl\n"
 
-println("Perple_X version: $PERPLEX_VERSION")
+# v2-amphibole solution model set (= ladder rung L1)
+const SOLUTION_PHASES =
+    "O(HGP)\nCpx(HGP)\nOpx(HGP)\nGt(HGP)\nChl(W)\nFsp(HGP)\ncAmph(G)\n"
+
+const ENSEMBLE_SIZE = 200
+const QUERY_MODE    = :grid   # :grid (one call/sample) or :point (1600/sample)
+
+const WERAMI = joinpath(Perple_X_jll.PATH[], "werami")
+
 
 # =============================================================================
-# PARSER
+# 2. INPUT
 # =============================================================================
-function parse_bound_h2o(point_str::String)
-    isempty(strip(point_str)) && return NaN
-    phase_h2o = Dict{String, Float64}()
-    bulk_h2o = NaN
-    in_phase_block = false
-    for line in split(point_str, "\n")
-        if occursin("Phase Compositions (weight percentages)", line)
-            in_phase_block = true
-            continue
+"Read the ENSEMBLE_SIZE x 7 posterior bulk compositions (wt%) for a scenario."
+function load_ensemble(scenario::String)
+    path = joinpath(BAYES_DIR, "ensemble_$(scenario).csv")
+    isfile(path) || error("Not found: $path")
+    raw, head = readdlm(path, ',', header=true)
+    head = vec(String.(head))
+    cols = [findfirst(h -> startswith(h, ox), head) for ox in OXIDES]
+    any(isnothing, cols) && error("Missing oxide column in $path")
+    comps = Float64.(raw[:, cols])
+    n = min(ENSEMBLE_SIZE, size(comps, 1))
+    return comps[1:n, :]
+end
+
+
+# =============================================================================
+# 3. BOUND-H2O VIA SINGLE GRID QUERY  (fast path)
+# =============================================================================
+"""
+One werami call: 2-D grid (mode 2), property 36 (all system properties),
+option 1 (system only), fluid EXCLUDED. Returns (Tvec, Pvec, H2Ogrid) where
+H2Ogrid is the system H2O wt% with fluid removed = bound H2O. The returned
+T/P node vectors are whatever werami used (depends on grid_levels in the
+option file); callers interpolate onto the canonical NT x NP axes.
+"""
+function query_grid_boundh2o(scratchdir::String; index::Int=1)
+    prefix = joinpath(scratchdir, "out$(index)") * "/"
+
+    # Ensure grid-on path (avoids the "change variable range" prompt that the
+    # grid-off path injects). Finest resolution menu entry chosen below.
+    run(pipeline(`sed -e "s/sample_on_grid .*|/sample_on_grid                   T |/" -i.backup $(prefix)perplex_option.dat`))
+
+    batch = prefix * "werami_grid.bat"
+    open(batch, "w") do io
+        # index, mode2, prop36, system-only, exclude fluid, finest grid (4), exit
+        write(io, "$index\n2\n36\n1\nn\n4\n0\n")
+    end
+    rm(prefix * "$(index)_1.tab", force=true)
+    ld = "DYLD_LIBRARY_PATH=$(first(Perple_X_jll.LIBPATH_list)):\$DYLD_LIBRARY_PATH"
+    run(pipeline(`bash -c "export $ld; cd $prefix; $WERAMI < werami_grid.bat > werami_grid.log 2>&1"`))
+
+    tab = prefix * "$(index)_1.tab"
+    isfile(tab) || error("werami produced no .tab in $prefix")
+    return parse_tab_boundh2o(tab)
+end
+
+"Parse a werami 2-D .tab: returns (Tvec, Pvec, H2Ogrid[NP_w, NT_w])."
+function parse_tab_boundh2o(tabpath::String)
+    lines = readlines(tabpath)
+    # Header block (|6.6.6 format): line 3 = ndim; then per axis:
+    #   name / min / delta / npts.  Then column-count, column-names, data.
+    # Robust approach: find the column-name row (contains "T(K)" and "H2O").
+    icol = findfirst(l -> occursin("T(K)", l) && occursin("H2O", l), lines)
+    icol === nothing && error("Could not find column header in $tabpath")
+    cols = split(strip(lines[icol]))
+    jT   = findfirst(==("T(K)"), cols)
+    jP   = findfirst(==("P(bar)"), cols)
+    jH2O = findfirst(c -> startswith(c, "H2O"), cols)
+    (jT === nothing || jP === nothing || jH2O === nothing) &&
+        error("Missing T/P/H2O column in $tabpath")
+
+    Ts = Float64[]; Ps = Float64[]; Hs = Float64[]
+    for l in lines[icol+1:end]
+        tok = split(strip(l))
+        length(tok) < jH2O && continue
+        t = tryparse(Float64, tok[jT]); p = tryparse(Float64, tok[jP])
+        h = tryparse(Float64, tok[jH2O])
+        (t === nothing || p === nothing) && continue
+        push!(Ts, t); push!(Ps, p)
+        push!(Hs, h === nothing ? NaN : max(0.0, h))
+    end
+
+    Tu = sort(unique(Ts)); Pu = sort(unique(Ps))
+    grid = fill(NaN, length(Pu), length(Tu))
+    for k in eachindex(Hs)
+        i = searchsortedfirst(Pu, Ps[k]); j = searchsortedfirst(Tu, Ts[k])
+        grid[i, j] = Hs[k]
+    end
+    return Tu, Pu, grid
+end
+
+"Bilinear-interpolate a (Pvec,Tvec,grid) onto the canonical NP x NT axes."
+function regrid(Tvec, Pvec, grid, Tout, Pout)
+    out = fill(NaN, length(Pout), length(Tout))
+    for (i, P) in enumerate(Pout), (j, T) in enumerate(Tout)
+        ip = clamp(searchsortedlast(Pvec, P), 1, length(Pvec)-1)
+        jt = clamp(searchsortedlast(Tvec, T), 1, length(Tvec)-1)
+        P1, P2 = Pvec[ip], Pvec[ip+1]; T1, T2 = Tvec[jt], Tvec[jt+1]
+        fp = (P - P1) / (P2 - P1); ft = (T - T1) / (T2 - T1)
+        q11, q12 = grid[ip, jt],   grid[ip, jt+1]
+        q21, q22 = grid[ip+1, jt], grid[ip+1, jt+1]
+        any(isnan, (q11, q12, q21, q22)) && continue
+        out[i, j] = (1-fp)*(1-ft)*q11 + (1-fp)*ft*q12 + fp*(1-ft)*q21 + fp*ft*q22
+    end
+    return out
+end
+
+
+# =============================================================================
+# 4. BOUND-H2O VIA POINT QUERIES  (fallback, :point mode)
+# =============================================================================
+"Parse bound H2O (solid-only wt%) from one perplex_query_point text block."
+function parse_point_boundh2o(text::AbstractString)
+    isempty(strip(text)) && return NaN
+    lines = split(text, '\n')
+    ib = findfirst(l -> startswith(strip(l), "Bulk Composition"), lines)
+    ib === nothing && return NaN
+    iend = min(ib + 15, length(lines))
+    solid = any(occursin("Solid Only", l) for l in lines[ib:min(ib+3,length(lines))])
+    for l in lines[ib:iend]
+        tok = split(strip(l)); isempty(tok) && continue
+        tok[1] == "H2O" || continue
+        if solid && length(tok) >= 9
+            v = tryparse(Float64, tok[8]); return v === nothing ? NaN : max(0.0, v)
+        elseif length(tok) >= 4
+            v = tryparse(Float64, tok[4]); return v === nothing ? NaN : max(0.0, v)
         end
-        if in_phase_block && occursin("Phase speciation", line)
-            in_phase_block = false
+    end
+    return NaN
+end
+
+function query_point_grid(scratchdir, Tout, Pout)
+    grid = fill(NaN, length(Pout), length(Tout))
+    for (i, P) in enumerate(Pout), (j, T) in enumerate(Tout)
+        grid[i, j] = parse_point_boundh2o(perplex_query_point(scratchdir, P, T))
+    end
+    return grid
+end
+
+
+# =============================================================================
+# 5. FAIL-FAST + PER-SAMPLE DRIVER
+# =============================================================================
+function check_perplex_run(scratchdir::String; index::Int=1)
+    prefix = joinpath(scratchdir, "out$(index)")
+    blog = joinpath(prefix, "build.log")
+    if isfile(blog)
+        for m in eachmatch(r"(\S+)\s+is invalid\.", read(blog, String))
+            error("build rejected '$(m.captures[1])' in $scratchdir")
         end
-        if in_phase_block
-            tokens = split(strip(line))
-            if length(tokens) == 13
-                wt_pct = tryparse(Float64, tokens[2])
-                h2o_in_phase = tryparse(Float64, tokens[end])
-                if wt_pct !== nothing && h2o_in_phase !== nothing
-                    phase_h2o[tokens[1]] = (wt_pct / 100.0) * h2o_in_phase
+    end
+    vlog = joinpath(prefix, "vertex.log")
+    isfile(vlog) || error("vertex.log missing in $prefix")
+    v = read(vlog, String)
+    (occursin(r"\(Y/N\)\?\s*$", v) || occursin("ver017", v)) &&
+        error("vertex stopped at interactive prompt in $scratchdir")
+    occursin("End of job", v) || error("vertex did not finish in $scratchdir")
+    blk = joinpath(prefix, "$(index).blk")
+    (isfile(blk) && filesize(blk) > 0) || error("empty $(index).blk in $prefix")
+end
+
+"Configure + vertex + bound-H2O grid for one ensemble sample."
+function run_sample(scenario::String, i::Int, comp7::AbstractVector,
+                    Tout, Pout)
+    scratch = joinpath(SCRATCH_TOP,
+                       "$(PERPLEX_VERSION)_$(scenario)_sample_$(i)") * "/"
+    comp = vcat(collect(comp7), H2O_WT)
+
+    perplex_configure_pseudosection(scratch, comp, ELEMENTS, P_RANGE, T_RANGE;
+        dataset=DATASET, index=1, xnodes=XNODES, ynodes=YNODES,
+        solution_phases=SOLUTION_PHASES, excludes=EXCLUDES)
+    check_perplex_run(scratch)
+
+    if QUERY_MODE == :grid
+        Tv, Pv, g = query_grid_boundh2o(scratch)
+        grid = regrid(Tv, Pv, g, Tout, Pout)
+    else
+        grid = query_point_grid(scratch, Tout, Pout)
+    end
+
+    nnan = count(isnan, grid)
+    nnan == length(grid) && error("all-NaN grid for $scenario sample $i")
+    return grid
+end
+
+
+# =============================================================================
+# 6. OUTPUT
+# =============================================================================
+"Write one P-T grid: T(K) headers, P(GPa) row labels, LF endings."
+function write_grid_csv(path, Tout, Pout, grid)
+    open(path, "w") do io
+        print(io, "")
+        for T in Tout; @printf(io, ",%.2f", T); end
+        print(io, "\n")
+        for (i, P) in enumerate(Pout)
+            @printf(io, "%.5f", P / 1e4)
+            for j in eachindex(Tout)
+                isnan(grid[i,j]) ? print(io, ",NaN") : @printf(io, ",%.6f", grid[i,j])
+            end
+            print(io, "\n")
+        end
+    end
+end
+
+
+# =============================================================================
+# 7. MAIN
+# =============================================================================
+function main()
+    mkpath(OUT_DIR)
+    Tout = collect(range(first(T_RANGE), last(T_RANGE), length=NT))
+    Pout = collect(range(first(P_RANGE), last(P_RANGE), length=NP))
+
+    println("="^70)
+    println("Ensemble bound-H2O lookup tables -- $(PERPLEX_VERSION)")
+    println("Models: $(replace(strip(SOLUTION_PHASES), '\n' => ' '))")
+    println("Samples: $(ENSEMBLE_SIZE) | grid: $(NP)x$(NT) | query: $(QUERY_MODE)")
+    println("="^70); flush(stdout)
+
+    for scenario in SCENARIOS
+        comps = load_ensemble(scenario)
+        n = size(comps, 1)
+        println("\n[$scenario] $n samples"); flush(stdout)
+
+        # Accumulate the ensemble as a 3-D stack for mean/std.
+        stack = fill(NaN, n, NP, NT)
+        done  = falses(n)
+        lk = ReentrantLock()
+
+        Threads.@threads for i in 1:n
+            try
+                g = run_sample(scenario, i, view(comps, i, :), Tout, Pout)
+                lock(lk) do; stack[i, :, :] = g; done[i] = true; end
+            catch e
+                lock(lk) do
+                    @warn "sample $i failed" exception=e
                 end
             end
-        end
-        m = match(r"^\s+H2O\s+[\d.]+\s+[\d.]+\s+([\d.]+)", line)
-        if m !== nothing
-            bulk_h2o = parse(Float64, m[1])
-        end
-    end
-    free_fluid_contrib = get(phase_h2o, "fluid", get(phase_h2o, "H2O", 0.0))
-    bound_h2o = isnan(bulk_h2o) ? NaN : bulk_h2o - free_fluid_contrib
-    return max(0.0, bound_h2o)
-end
-
-# =============================================================================
-# OUTPUT WRITER
-# =============================================================================
-function write_lookup_table(grid::Matrix{Float64}, path::String)
-    lines = String[]
-    # Header: empty cell + T values in K
-    t_labels = [string(round(t, digits=4)) for t in T_VEC]
-    push!(lines, "," * join(t_labels, ","))
-    # Data rows: P in GPa + values
-    for (j, P_bar) in enumerate(P_VEC)
-        p_gpa = P_bar / 10000.0
-        p_str = string(round(p_gpa, digits=6))
-        vals = [isnan(grid[j, k]) ? "" : string(round(grid[j, k], digits=6))
-                for k in 1:length(T_VEC)]
-        push!(lines, p_str * "," * join(vals, ","))
-    end
-    write(path, join(lines, "\r"))
-    println("  Saved: $path ($(length(P_VEC)) P x $(length(T_VEC)) T, CR-only)")
-end
-
-# =============================================================================
-# MAIN ENSEMBLE LOOP
-# =============================================================================
-for scenario in SCENARIOS
-    println("\n" * "="^60)
-    println("Scenario: $scenario")
-    println("="^60)
-
-    # Bayesian artifact: fixed name, shared across all Perple_X versions.
-    csv_path = joinpath(DATA_DIR, "ensemble_$(scenario).csv")
-    df_ens = CSV.read(csv_path, DataFrame)
-
-    # N_SAMPLES = 0 means all rows; positive value caps at that number
-    n = (N_SAMPLES == 0) ? nrow(df_ens) : min(N_SAMPLES, nrow(df_ens))
-    println("Running $n / $(nrow(df_ens)) ensemble compositions")
-
-    # wrap sampling part with the multithreads, each sample is independent
-    bound_h2o_ensemble = fill(NaN, n, length(P_VEC), length(T_VEC))
-    n_failed = Threads.Atomic{Int}(0)
-
-    Threads.@threads for i in 1:n
-        println("  Sample $i / $n (thread $(Threads.threadid()))")
-        comp = vcat(Vector{Float64}(df_ens[i, :]), H2O_WT)
-
-        # Each thread needs its own scratch directory to avoid file conflicts.
-        # Tagged with PERPLEX_VERSION so v1 and v2 runs never share a working dir.
-        scratchdir_i = joinpath(SCRATCH_DIR, "$(PERPLEX_VERSION)_$(scenario)_sample_$(i)")
-        mkpath(scratchdir_i)
-
-        try
-            perplex_configure_pseudosection(
-                scratchdir_i,
-                comp,
-                ["SiO2","TiO2","Al2O3","FeO","MgO","CaO","Na2O","H2O"],
-                (1, 80000),
-                (273.0, 1600.0),
-                dataset = "hp62ver.dat",
-                # solution_phases = "O(HGP)\nCpx(HGP)\nOpx(HGP)\nGt(HGP)\nChl(W)\nEp(HP)\nPheng(HP)\nSp(HGP)\nFsp(HGP)\n",
-                solution_phases = "O(HGP)\nCpx(HGP)\nnCpx(HGP)\nOpx(HGP)\nGt(HGP)\nFsp(HGP)\nSp(HGP)\nChl(W)\nEp(HP)\nAmph(DPW)\nT\n",
-                excludes = "ts\nparg\ngl\nged\nfanth\n",
-                fluid_eos = 5,
-            )
-
-            # n_ok = 0
-            for (j, P) in enumerate(P_VEC)
-                for (k, T) in enumerate(T_VEC)
-                    pt = perplex_query_point(scratchdir_i, P, T)
-                    bh2o = parse_bound_h2o(pt)
-                    bound_h2o_ensemble[i, j, k] = bh2o
-                    # n_ok += 1
-                end
+            if i % 10 == 0
+                @printf("[%s] sample %d / %d\n", scenario, i, n); flush(stdout)
             end
-            println("  v Sample $i done")
-        catch e
-            @warn "  Sample $i failed: $e"
-            Threads.atomic_add!(n_failed, 1)
         end
+
+        nok = count(done)
+        @printf("[%s] completed %d / %d samples\n", scenario, nok, n)
+        nok == 0 && (@warn "no samples succeeded for $scenario"; continue)
+
+        # Per-sample lookup tables
+        for i in findall(done)
+            write_grid_csv(
+                joinpath(OUT_DIR, "boundH2O_$(scenario)_sample_$(i).csv"),
+                Tout, Pout, stack[i, :, :])
+        end
+
+        # Ensemble mean and std (over successful samples, per cell)
+        meang = fill(NaN, NP, NT); stdg = fill(NaN, NP, NT)
+        for a in 1:NP, b in 1:NT
+            col = [stack[i, a, b] for i in findall(done)]
+            ok  = filter(!isnan, col)
+            if !isempty(ok)
+                meang[a, b] = sum(ok) / length(ok)
+                stdg[a, b]  = length(ok) > 1 ?
+                    sqrt(sum((ok .- meang[a,b]).^2) / (length(ok)-1)) : 0.0
+            end
+        end
+        write_grid_csv(joinpath(OUT_DIR, "boundH2O_$(scenario)_ensemble_mean.csv"),
+                       Tout, Pout, meang)
+        write_grid_csv(joinpath(OUT_DIR, "boundH2O_$(scenario)_ensemble_std.csv"),
+                       Tout, Pout, stdg)
+        ok = .!isnan.(meang)
+        @printf("[%s] mean bound H2O = %.3f wt%%, max = %.3f wt%%\n",
+                scenario, sum(meang[ok])/count(ok), maximum(meang[ok]))
+        flush(stdout)
     end
 
-    println("Failed samples: $(n_failed[]) / $n")
-
-    n_all_nan = sum(all(isnan.(bound_h2o_ensemble[i,:,:])) for i in 1:n)
-    n_cell_nan = count(isnan, bound_h2o_ensemble)
-    println("Samples with all NaN: $n_all_nan / $n")
-    println("Individual NaN cells: $n_cell_nan / $(n * length(P_VEC) * length(T_VEC))")
-
-    println("P-T cells with >50% NaN:")
-    found_any = false
-    for j in 1:length(P_VEC), k in 1:length(T_VEC)
-        if count(isnan, bound_h2o_ensemble[:, j, k]) > n * 0.5
-            println("  P=$(round(P_VEC[j]/10000, digits=4)) GPa, T=$(round(T_VEC[k], digits=1)) K")
-            found_any = true
-        end
-    end
-    found_any || println("  none")
-
-    println("\nComputing ensemble statistics...")
-    nanmean(x) = (v = filter(!isnan, x); isempty(v) ? NaN : mean(v))
-    nanstd(x)  = (v = filter(!isnan, x); length(v) < 2 ? NaN : std(v))
-
-    h2o_mean = [nanmean(bound_h2o_ensemble[:, j, k])
-                for j in 1:length(P_VEC), k in 1:length(T_VEC)]
-    h2o_std  = [nanstd(bound_h2o_ensemble[:, j, k])
-                for j in 1:length(P_VEC), k in 1:length(T_VEC)]
-
-    write_lookup_table(h2o_mean, joinpath(OUTPUT_DIR, "$(PERPLEX_VERSION)_h2o_bound_mean_$(scenario).csv"))
-    write_lookup_table(h2o_std,  joinpath(OUTPUT_DIR, "$(PERPLEX_VERSION)_h2o_bound_std_$(scenario).csv"))
-
-    nanpercentile(x, p) = (v = filter(!isnan, x); isempty(v) ? NaN : quantile(v, p/100))
-    h2o_p05 = [nanpercentile(bound_h2o_ensemble[:, j, k], 5)
-               for j in 1:length(P_VEC), k in 1:length(T_VEC)]
-    h2o_p50 = [nanpercentile(bound_h2o_ensemble[:, j, k], 50)
-               for j in 1:length(P_VEC), k in 1:length(T_VEC)]
-    h2o_p95 = [nanpercentile(bound_h2o_ensemble[:, j, k], 95)
-               for j in 1:length(P_VEC), k in 1:length(T_VEC)]
-
-    write_lookup_table(h2o_p05, joinpath(OUTPUT_DIR, "$(PERPLEX_VERSION)_h2o_p05_$(scenario).csv"))
-    write_lookup_table(h2o_p50, joinpath(OUTPUT_DIR, "$(PERPLEX_VERSION)_h2o_p50_$(scenario).csv"))
-    write_lookup_table(h2o_p95, joinpath(OUTPUT_DIR, "$(PERPLEX_VERSION)_h2o_p95_$(scenario).csv"))
+    println("\nLookup tables in: $(OUT_DIR)/")
 end
 
-println("\nDone. All lookup tables saved to $OUTPUT_DIR  (Perple_X version: $PERPLEX_VERSION)")
+main()
