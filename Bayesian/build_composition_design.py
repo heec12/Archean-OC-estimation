@@ -112,11 +112,23 @@ MGO_OXIDE = "MgO_pct"
 ALR_REF   = "SiO2_pct"
 ALR_NUM   = ["TiO2_pct", "Al2O3_pct", "FeOtot_pct", "CaO_pct", "Na2O_pct"]
 
-MGO_CENTER = 16.0  # centring for the regression, wt%
+MGO_CENTER = 12.0  # centring for the regression, wt%
 
 # --- Design grid -------------------------------------------------------------
-# 12 bins of 2 wt% from 8 to 32. MgO is drawn uniformly within each bin.
-MGO_EDGES = np.arange(8.0, 32.0 + 1e-9, 2.0)
+# OPTION A: the design is narrowed to the range the GSWA compilation actually
+# covers. Across all 1774 rows of Smithies et al. (2018) Supplementary
+# Appendix 1, MgO tops out at 17.8 wt% and NOTHING exceeds 18. The 122 rows
+# labelled "komatiite" average 9.7 wt% MgO -- those are field/stratigraphic
+# assignments (spinifex-zone basalts, differentiated flow tops in komatiite-
+# bearing units), not compositional classifications. No filter recovers a
+# komatiite composition from this source.
+#
+# So the response curve runs over MgO 6-18: the observed compositional range
+# of Yilgarn/Pilbara greenstone volcanics. That is a real result, it just does
+# not reach the komatiite end. To extend it, merge a komatiite-specific
+# compilation (Sossi et al. 2016, J. Petrol. 57, 147-184, or GEOROC filtered
+# to Archean komatiites), add a SOURCE column, and widen these edges.
+MGO_EDGES = np.arange(6.0, 18.0 + 1e-9, 2.0)   # 6 bins of 2 wt%
 
 # Al2O3/TiO2 splits Al-depleted (Barberton-type, ~10-12) from Al-undepleted
 # (Munro-type, ~20, near-chondritic). This matters more for garnet stability
@@ -125,14 +137,33 @@ MGO_EDGES = np.arange(8.0, 32.0 + 1e-9, 2.0)
 AL_TI_SPLIT = 15.0
 AL_TYPES    = ["Al_depleted", "Al_undepleted"]
 
-N_REPLICATES_DEFAULT = 4   # 12 bins x 2 Al types x 4 = 96 pairs = 192 runs
+# 6 bins x 2 Al types x 8 = 96 pairs = 192 Perple_X runs.
+N_REPLICATES_DEFAULT = 8
+
+# --- Rock-type filter --------------------------------------------------------
+# The GSWA appendix is the full greenstone compilation: basalt through rhyolite
+# plus intrusives and sediments. Keep mafic-ultramafic volcanic rocks only.
+# Matching is case-insensitive substring; EXCLUDE is applied first and wins.
+#
+# Rocktype labels in this dataset are unreliable at the ultramafic end (see the
+# note on MGO_EDGES above). Where Ni and Cr are reported they are far better
+# ultramafic-affinity indicators than the label -- worth using if a second
+# dataset is ever merged in.
+ROCKTYPE_EXCLUDE = [
+    "dacit", "rhyol", "felsic", "andesit", "biotite", "breccia",
+    "diorite", "dolerite", "intrusive", "sediment", "not given",
+]
+ROCKTYPE_INCLUDE = [
+    "basalt", "komatiit", "amphibolit", "mafic", "ultramafic",
+    "peridotit", "pyroxenit", "boninit", "spinifex",
+]
 
 # --- Alteration screening (replaces the LOI filter) --------------------------
 # Applied AFTER anhydrous renormalisation. Ratio-based where possible because
 # ratios of immobile elements survive serpentinisation; absolute wt% does not.
 SCREEN = {
     "SiO2_pct"  : (36.0, 60.0),
-    "MgO_pct"   : ( 5.0, 42.0),
+    "MgO_pct"   : ( 4.0, 42.0),
     "Al2O3_pct" : ( 1.5, 20.0),
     "CaO_pct"   : ( 1.0, 18.0),
     "FeOtot_pct": ( 4.0, 20.0),
@@ -140,7 +171,19 @@ SCREEN = {
 }
 AL_TI_RANGE    = (4.0, 45.0)   # outside this is analytical junk, not petrology
 CAO_AL2O3_RANGE = (0.3, 2.0)   # flags Ca loss (carbonate/silica alteration)
-ANHYDROUS_TOTAL_RANGE = (95.0, 105.0)  # on the raw major-element sum
+
+# Analytical-quality screen on the total.
+#
+# Preference order: a reported total column (Total_calc, which includes MnO,
+# K2O, P2O5 and LOI) > majors + LOI > majors alone.
+#
+# NEVER screen the seven majors alone on a narrow window: serpentinised rocks
+# carry 6-12 wt% LOI, so their major sum is 88-94 and a 95-105 window deletes
+# exactly the hydrous samples this design is meant to keep. That bug removed
+# 14 of 38 rows on the earlier komatiitic basalt subset.
+REPORTED_TOTAL_RANGE       = (95.0, 105.0)   # used when Total_calc exists
+TOTAL_WITH_VOLATILES_RANGE = (95.0, 105.0)   # majors + LOI
+MAJOR_ONLY_TOTAL_RANGE     = (85.0, 102.0)   # fallback when neither exists
 
 # Multiplicative replacement for zeros before the log-ratio transform.
 # Altered komatiites can report Na2O at or below detection.
@@ -222,12 +265,44 @@ def load_and_screen(file_path, sheet_name, verbose=True):
     df = df.dropna(subset=OXIDES).copy()
     n_complete = len(df)
 
-    # Screen on the RAW anhydrous total before renormalising. A raw major
-    # sum far from 100 (once LOI is set aside) means a bad analysis, not
-    # hydration.
-    raw_total = df[OXIDES].sum(axis=1)
-    df = df[(raw_total >= ANHYDROUS_TOTAL_RANGE[0]) &
-            (raw_total <= ANHYDROUS_TOTAL_RANGE[1])]
+    # Rock-type filter: the GSWA appendix spans basalt to rhyolite plus
+    # intrusives. Keep mafic-ultramafic volcanic rocks only.
+    if "Rocktype" in df.columns:
+        rt = df["Rocktype"].fillna("").astype(str).str.lower()
+        excl = rt.apply(lambda s: any(e in s for e in ROCKTYPE_EXCLUDE))
+        incl = rt.apply(lambda s: any(i in s for i in ROCKTYPE_INCLUDE))
+        df = df[incl & ~excl]
+        if verbose:
+            print(f"  mafic-ultramafic volcanic rows: {len(df)}")
+    n_rocktype = len(df)
+
+    # Analytical-quality screen on the total. See the note on
+    # REPORTED_TOTAL_RANGE for why the majors alone are never used narrowly.
+    raw_major = df[OXIDES].sum(axis=1)
+    total_col = next((c for c in ("Total_calc", "Total", "TOTAL")
+                      if c in df.columns), None)
+    loi_col = next((c for c in ("LOI_pct", "LOI", "loi_pct", "LOI_wt")
+                    if c in df.columns), None)
+
+    if total_col is not None:
+        tot = pd.to_numeric(df[total_col], errors="coerce")
+        keep = tot.between(*REPORTED_TOTAL_RANGE)
+        if verbose:
+            print(f"  screening on reported total '{total_col}' "
+                  f"{REPORTED_TOTAL_RANGE}")
+    elif loi_col is not None:
+        loi = pd.to_numeric(df[loi_col], errors="coerce").fillna(0.0).clip(lower=0.0)
+        keep = (raw_major + loi).between(*TOTAL_WITH_VOLATILES_RANGE)
+        if verbose:
+            print(f"  screening on majors + '{loi_col}': median LOI "
+                  f"{loi.median():.1f} wt%, max {loi.max():.1f} wt%")
+    else:
+        keep = raw_major.between(*MAJOR_ONLY_TOTAL_RANGE)
+        if verbose:
+            print("  no total or LOI column; screening majors alone on "
+                  f"{MAJOR_ONLY_TOTAL_RANGE} (wide, to retain hydrous rocks)")
+
+    df = df[keep]
     n_total_ok = len(df)
 
     # Renormalise to 100 on the 7-oxide anhydrous system.
@@ -266,7 +341,8 @@ def load_and_screen(file_path, sheet_name, verbose=True):
         print("\n--- Data screening ---")
         print(f"  rows in sheet                : {n0}")
         print(f"  complete 7-oxide analyses    : {n_complete}")
-        print(f"  raw anhydrous total in range : {n_total_ok}")
+        print(f"  mafic-ultramafic volcanic    : {n_rocktype}")
+        print(f"  total in analytical range    : {n_total_ok}")
         print(f"  passed alteration screens    : {n_screened}")
         print(f"  after SampleID dedup         : {n_dedup}")
         print(f"\n  MgO range: {df['MgO_pct'].min():.1f} - "
@@ -446,9 +522,20 @@ def draw_from_trend(idata, mgo_target, rng):
 
 
 def draw_stratified(df_sub, rng):
-    """One composition drawn as a real analysed rock from this design cell."""
-    i = rng.integers(len(df_sub))
-    return df_sub.iloc[i][OXIDES].to_numpy(dtype=float)
+    """
+    One composition drawn as a real analysed rock from this design cell.
+
+    Returns (composition, source_row). Every ensemble member is then an
+    observed GSWA analysis, which is the strongest provenance claim available
+    and needs no trend model at all. With ~1000 analyses over six bins this is
+    the better mode; regression only earns its place when cells are sparse.
+
+    Sampling is with replacement, so a thin cell will repeat analyses. The
+    caller warns when that is likely.
+    """
+    i = int(rng.integers(len(df_sub)))
+    row = df_sub.iloc[i]
+    return row[OXIDES].to_numpy(dtype=float), row
 
 
 # =============================================================================
@@ -551,12 +638,18 @@ def build_design(df, mode, n_replicates, seed, cores, allow_gaps, output_dir):
                 skipped.append((center, al))
                 continue
 
+            if len(cell) and len(cell) < n_replicates and mode == "stratified":
+                print(f"  NOTE: MgO ~{center:.0f}, {al}: only {len(cell)} "
+                      f"analyses for {n_replicates} replicates -- draws will "
+                      f"repeat samples")
+
             for rep in range(n_replicates):
                 # MgO uniform within the bin: design coverage, not abundance
                 mgo_target = float(rng.uniform(lo, hi))
+                src = None
 
                 if mode == "stratified":
-                    x_upper = draw_stratified(cell, rng)
+                    x_upper, src = draw_stratified(cell, rng)
                     mgo_target = x_upper[OXIDES.index("MgO_pct")]
                 else:
                     x_upper = draw_from_trend(traces[al], mgo_target, rng)
@@ -582,6 +675,20 @@ def build_design(df, mode, n_replicates, seed, cores, allow_gaps, output_dir):
                     "mode_plag": round(modes["plagioclase"], 4),
                     "trapped_liquid": TRAPPED_LIQUID_FRAC,
                 }
+                # Provenance: in stratified mode every draw is a real analysis,
+                # so record which one. Terrane matters because Al-depleted
+                # samples may cluster by belt -- if they do, the Al axis is
+                # partly a terrane proxy and the response curve needs that
+                # caveat.
+                base["source_sample"] = (str(src["SampleID"])
+                                         if src is not None and "SampleID" in src
+                                         else "")
+                base["source_terrane"] = (str(src["TERRANE"])
+                                          if src is not None and "TERRANE" in src
+                                          else "")
+                base["source_rocktype"] = (str(src["Rocktype"])
+                                           if src is not None and "Rocktype" in src
+                                           else "")
 
                 for layer, comp in (("upper", x_upper), ("lower", x_lower)):
                     row = dict(base)
@@ -694,11 +801,11 @@ def main():
     )
     p.add_argument("--data", required=True, help="Excel compilation path")
     p.add_argument("--sheet", required=True,
-                   help="Sheet name. Must span MgO ~8-32 wt%%, i.e. the broad "
-                        "compilation, NOT strict_komatiitic_basalt.")
+                   help="Sheet name in the compilation workbook, e.g. 'Sheet0' "
+                        "for the GSWA supplementary appendix.")
     p.add_argument("--output", default="./design_outputs")
     p.add_argument("--mode", choices=["regression", "stratified"],
-                   default="regression",
+                   default="stratified",
                    help="regression = ALR trend fit then sample (fills sparse "
                         "bins); stratified = resample real analyses (every "
                         "ensemble member is an observed rock)")
