@@ -409,8 +409,14 @@ try
     needed = KEEP_SCRATCH ? SCRATCH_GB_PER_RUN * 250 :
                             SCRATCH_GB_PER_RUN * Threads.nthreads() * 4
     if avail_gb < max(needed, 5.0)
-        @warn @sprintf("Only %.1f GB free (need ~%.1f GB plus room for output). " *
-                       "Check `pace-quota` before running.", avail_gb, needed)
+        # NOTE: do not use @sprintf here with a concatenated format string.
+        # @sprintf is a macro and requires a LITERAL format argument; a
+        # "..." * "..." expression is not literal at macro-expansion time and
+        # Julia 1.12 rejects it with "First argument to `@sprintf` must be a
+        # format string". Plain interpolation avoids the whole issue.
+        @warn "Only $(round(avail_gb, digits=1)) GB free in $SCRATCH_DIR " *
+              "(need roughly $(round(needed, digits=1)) GB plus room for output). " *
+              "Check `pace-quota` before running."
     end
 catch
     println("  free scratch : (could not determine)")
