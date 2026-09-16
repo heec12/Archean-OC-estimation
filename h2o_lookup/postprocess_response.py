@@ -30,7 +30,7 @@ WHAT THIS DOES
    the deliverable. The ensemble is a design, not a probability distribution,
    so its mean is meaningless -- the curve and its residual scatter are the
    result.
-6. Runs a sensitivity regression of the scalar on all seven oxides, so
+6. Runs a closure-aware (clr) sensitivity regression on all seven oxides, so
    "which oxide controls the dehydration band" is answered quantitatively
    rather than asserted.
 7. Exports final P-T lookup tables in the Wilson-style CR-only matrix format
@@ -335,46 +335,118 @@ def response_curve(scalars, scalar_col, f_value, output_dir):
     return g
 
 
-def sensitivity_regression(scalars, scalar_col, f_value, output_dir):
+def sensitivity_regression(scalars, scalar_col, f_value, output_dir,
+                           n_boot=1000, seed=0):
     """
-    Standardised regression coefficients of the scalar on all seven oxides.
+    Which oxide controls the scalar -- done in a way that respects closure.
 
-    Because MgO is sampled by design over a wide range, these coefficients
-    answer "which oxide controls the dehydration band, and how strongly" --
-    a sensitivity result, which is what the design was built to produce.
-    Compositional data are collinear (they sum to 100), so read these as
-    relative importance, not as independent causal effects.
+    Why not an ordinary regression on the seven wt% values: they sum to 100,
+    so the design matrix is singular. "Raise SiO2, hold the other six fixed"
+    is not a possible rock, the coefficients are unidentified, and lstsq
+    returns huge values that cancel along the constant-sum direction (the v3
+    first pass gave std_beta ~900).
+
+    Model 1 -- centred log-ratio (clr), all seven oxides kept:
+        clr_i = log(x_i) - mean_j log(x_j)
+        y     = b0 + sum_i b_i * clr_i,   with sum_i b_i = 0
+    Every oxide gets a coefficient, SiO2 included; none is singled out as a
+    reference. b_i is the effect of enriching oxide i relative to the
+    composition as a whole. The sum-to-zero solution is the minimum-norm
+    lstsq solution, so the clr columns are centred but NOT standardised
+    individually -- per-column scaling would destroy that property.
+
+    Reported per oxide:
+      clr_coef       b_i, wt% H2O (or km) per unit log-ratio
+      design_effect  b_i * sd(clr_i) / sd(y): how far this oxide's ACTUAL
+                     spread in the design moves y. An oxide can matter
+                     petrologically and still score low here if it barely
+                     varies across the ensemble.
+      ci_lo, ci_hi   95% bootstrap interval on design_effect (resampling pairs)
+      marginal_corr  one-oxide-at-a-time correlation, as before
+
+    Model 2 -- the design axes directly:
+        y = b0 + b1*(MgO - mean) + b2*[Al_undepleted] + b3*(MgO - mean)*[Al_undepleted]
+
+    Oxides here are the UPPER-crust draw. The lower crust is a deterministic
+    cumulate complement of it, so these coefficients include the effect of
+    that coupling -- read them as "choose this upper crust" effects.
     """
     sub = scalars[np.isclose(scalars["f"], f_value)].dropna(subset=[scalar_col])
     if len(sub) < 20:
         print(f"  too few rows ({len(sub)}) for a sensitivity regression")
         return None
 
-    X = sub[OXIDES].to_numpy(dtype=float)
+    names = [o.replace("_pct", "") for o in OXIDES]
+    X = np.clip(sub[OXIDES].to_numpy(dtype=float), 0.02, None)  # zeros -> DL
     y = sub[scalar_col].to_numpy(dtype=float)
+
+    def clr_fit(Xr, yr):
+        L = np.log(Xr)
+        C = L - L.mean(axis=1, keepdims=True)
+        Cc = C - C.mean(axis=0)
+        yc = yr - yr.mean()
+        b, *_ = np.linalg.lstsq(Cc, yc, rcond=None)   # min-norm => sum(b)=0
+        effect = b * C.std(axis=0) / (yr.std() + 1e-12)
+        r2 = 1.0 - np.sum((yc - Cc @ b) ** 2) / np.sum(yc ** 2)
+        return b, effect, r2
+
+    b, effect, r2 = clr_fit(X, y)
+
+    rng = np.random.default_rng(seed)
+    boot = np.empty((n_boot, len(OXIDES)))
+    for k in range(n_boot):
+        i = rng.integers(0, len(y), len(y))
+        boot[k] = clr_fit(X[i], y[i])[1]
+    lo, hi = np.percentile(boot, [2.5, 97.5], axis=0)
 
     Xs = (X - X.mean(0)) / (X.std(0) + 1e-12)
     ys = (y - y.mean()) / (y.std() + 1e-12)
-
-    beta, *_ = np.linalg.lstsq(np.column_stack([Xs, np.ones(len(Xs))]),
-                               ys, rcond=None)
-    coefs = beta[:len(OXIDES)]
-
-    # simple partial correlation for comparison
-    partial = [np.corrcoef(Xs[:, i], ys)[0, 1] for i in range(len(OXIDES))]
+    marginal = [np.corrcoef(Xs[:, j], ys)[0, 1] for j in range(len(OXIDES))]
 
     out = pd.DataFrame({
-        "oxide": [o.replace("_pct", "") for o in OXIDES],
-        "std_beta": np.round(coefs, 4),
-        "marginal_corr": np.round(partial, 4),
-        "abs_beta": np.round(np.abs(coefs), 4),
-    }).sort_values("abs_beta", ascending=False)
+        "oxide": names,
+        "clr_coef": np.round(b, 4),
+        "design_effect": np.round(effect, 4),
+        "ci_lo": np.round(lo, 4),
+        "ci_hi": np.round(hi, 4),
+        "marginal_corr": np.round(marginal, 4),
+    }).sort_values("design_effect", key=np.abs, ascending=False)
 
     path = os.path.join(output_dir, f"sensitivity_{scalar_col}_f{f_value:.2f}.csv")
     out.to_csv(path, index=False)
+    print(f"  clr model R^2 = {r2:.3f}   (sum of clr_coef = {b.sum():+.1e})")
     print(f"  Saved: {path}")
     print(out.to_string(index=False))
-    return out
+
+    # --- design-axes model ---
+    mgo = sub["MgO_pct"].to_numpy(dtype=float)
+    mgo_c = mgo - mgo.mean()
+    und = sub["al_type"].astype(str).str.contains("undepleted",
+                                                  case=False).to_numpy(float)
+    A = np.column_stack([np.ones_like(y), mgo_c, und, mgo_c * und])
+    labels = ["intercept (Al_depleted, mean MgO)", "MgO slope (per wt%)",
+              "Al_undepleted offset", "MgO x Al_undepleted"]
+
+    def ax_fit(Ar, yr):
+        return np.linalg.lstsq(Ar, yr, rcond=None)[0]
+
+    g = ax_fit(A, y)
+    gboot = np.empty((n_boot, 4))
+    for k in range(n_boot):
+        i = rng.integers(0, len(y), len(y))
+        gboot[k] = ax_fit(A[i], y[i])
+    glo, ghi = np.percentile(gboot, [2.5, 97.5], axis=0)
+    r2a = 1.0 - np.sum((y - A @ g) ** 2) / np.sum((y - y.mean()) ** 2)
+
+    axes = pd.DataFrame({"term": labels, "coef": np.round(g, 4),
+                         "ci_lo": np.round(glo, 4), "ci_hi": np.round(ghi, 4)})
+    apath = os.path.join(output_dir,
+                         f"sensitivity_axes_{scalar_col}_f{f_value:.2f}.csv")
+    axes.to_csv(apath, index=False)
+    print(f"\n  design-axes model R^2 = {r2a:.3f}")
+    print(f"  Saved: {apath}")
+    print(axes.to_string(index=False))
+    return out, axes
 
 
 def plot_response(scalars, f_value, output_dir):
@@ -573,7 +645,7 @@ def main():
         response_curve(scalars, col, args.f, args.output)
 
     print("\n--- Sensitivity: which oxide controls the signal ---")
-    for col in ["h2o_at_ref", "dehyd_depth_km"]:
+    for col in ["h2o_at_ref", "h2o_path_mean", "dehyd_depth_km", "release_wt"]:
         print(f"\n  [{col}]")
         sensitivity_regression(scalars, col, args.f, args.output)
 
