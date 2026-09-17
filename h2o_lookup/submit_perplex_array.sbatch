@@ -10,7 +10,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem-per-cpu=4G
-#SBATCH --time=12:00:00
+#SBATCH --time=120:00:00
 #SBATCH --array=0-15
 #SBATCH --output=logs/perplex_%A_%a.out
 #SBATCH --error=logs/perplex_%A_%a.err
