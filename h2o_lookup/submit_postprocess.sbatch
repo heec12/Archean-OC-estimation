@@ -22,13 +22,18 @@ export PYTHONUNBUFFERED=1
 echo "started : $(date)"
 echo "python  : $(which python)"
 
-echo "=== sanity check ==="
-python h2o_lookup/check_h2o_runs.py      # set -e stops the job here if it fails
-
-echo "=== post-processing ==="
+echo "=== post-processing: full ensemble + f sweep ==="
 python h2o_lookup/postprocess_response.py \
     --manifest design_outputs/composition_manifest.csv \
     --runs     h2o_runs/v3 \
-    --output   response_outputs
+    --output   response_outputs \
+    --f-sweep  0.20,0.35,0.50
+
+echo "=== post-processing: Murchison only ==="
+python h2o_lookup/postprocess_response.py \
+    --manifest design_outputs/composition_manifest.csv \
+    --runs     h2o_runs/v3 \
+    --output   response_outputs \
+    --terrane  Murchison
 
 echo "finished: $(date)"

@@ -336,7 +336,7 @@ def response_curve(scalars, scalar_col, f_value, output_dir):
 
 
 def sensitivity_regression(scalars, scalar_col, f_value, output_dir,
-                           n_boot=1000, seed=0):
+                           n_boot=1000, seed=0, cluster_col="source_sample"):
     """
     Which oxide controls the scalar -- done in a way that respects closure.
 
@@ -361,7 +361,10 @@ def sensitivity_regression(scalars, scalar_col, f_value, output_dir,
                      spread in the design moves y. An oxide can matter
                      petrologically and still score low here if it barely
                      varies across the ensemble.
-      ci_lo, ci_hi   95% bootstrap interval on design_effect (resampling pairs)
+      ci_lo, ci_hi   95% bootstrap interval on design_effect. Resampling is by
+                     source analysis (cluster_col), not by pair: thin cells
+                     reuse the same GSWA sample, and resampling pairs would
+                     treat those repeats as independent evidence.
       marginal_corr  one-oxide-at-a-time correlation, as before
 
     Model 2 -- the design axes directly:
@@ -393,9 +396,20 @@ def sensitivity_regression(scalars, scalar_col, f_value, output_dir,
     b, effect, r2 = clr_fit(X, y)
 
     rng = np.random.default_rng(seed)
+    if cluster_col in sub.columns:
+        codes = pd.factorize(sub[cluster_col].astype(str))[0]
+        members = [np.flatnonzero(codes == c) for c in range(codes.max() + 1)]
+    else:
+        members = [np.array([r]) for r in range(len(y))]
+    n_clusters = len(members)
+
+    def draw():
+        pick = rng.integers(0, n_clusters, n_clusters)
+        return np.concatenate([members[c] for c in pick])
+
     boot = np.empty((n_boot, len(OXIDES)))
     for k in range(n_boot):
-        i = rng.integers(0, len(y), len(y))
+        i = draw()
         boot[k] = clr_fit(X[i], y[i])[1]
     lo, hi = np.percentile(boot, [2.5, 97.5], axis=0)
 
@@ -414,6 +428,8 @@ def sensitivity_regression(scalars, scalar_col, f_value, output_dir,
 
     path = os.path.join(output_dir, f"sensitivity_{scalar_col}_f{f_value:.2f}.csv")
     out.to_csv(path, index=False)
+    print(f"  n = {len(y)} pairs from {n_clusters} unique "
+          f"{cluster_col if cluster_col in sub.columns else 'rows'}")
     print(f"  clr model R^2 = {r2:.3f}   (sum of clr_coef = {b.sum():+.1e})")
     print(f"  Saved: {path}")
     print(out.to_string(index=False))
@@ -433,7 +449,7 @@ def sensitivity_regression(scalars, scalar_col, f_value, output_dir,
     g = ax_fit(A, y)
     gboot = np.empty((n_boot, 4))
     for k in range(n_boot):
-        i = rng.integers(0, len(y), len(y))
+        i = draw()
         gboot[k] = ax_fit(A[i], y[i])
     glo, ghi = np.percentile(gboot, [2.5, 97.5], axis=0)
     r2a = 1.0 - np.sum((y - A @ g) ** 2) / np.sum((y - y.mean()) ** 2)
@@ -613,11 +629,18 @@ def main():
                    help="comma-separated f values, e.g. 0.20,0.35,0.50")
     p.add_argument("--path-csv", default=None,
                    help="slab-top P-T path with columns P_GPa,T_K")
+    p.add_argument("--terrane", default="",
+                   help="restrict response curves and regressions to one "
+                        "source_terrane (case-insensitive substring), e.g. "
+                        "Murchison. Outputs go to <output>/terrane_<name>/")
     p.add_argument("--export-lookup", default="",
                    help="selector for TerraFERMA export, e.g. "
                         "'mgo=14,al_type=Al_depleted'")
     args = p.parse_args()
 
+    if args.terrane:
+        args.output = os.path.join(args.output,
+                                   f"terrane_{args.terrane.replace(' ', '_')}")
     os.makedirs(args.output, exist_ok=True)
 
     print("--- Loading ---")
@@ -640,6 +663,23 @@ def main():
     scalars.to_csv(sc_path, index=False)
     print(f"  Saved: {sc_path}")
 
+    if args.terrane:
+        if "source_terrane" not in scalars.columns:
+            raise SystemExit("--terrane given but scalars have no source_terrane")
+        keep = scalars["source_terrane"].astype(str).str.contains(
+            args.terrane, case=False, regex=False)
+        if not keep.any():
+            raise SystemExit(f"no pairs match terrane '{args.terrane}'. Values: "
+                             f"{sorted(scalars['source_terrane'].astype(str).unique())}")
+        scalars = scalars[keep].copy()
+        at_f = scalars[np.isclose(scalars["f"], args.f)]
+        print(f"\n--- Terrane filter: '{args.terrane}' ---")
+        print(at_f.groupby(["al_type", "mgo_bin_center"]).size()
+                  .unstack(fill_value=0).to_string())
+        print(f"  {len(at_f)} pairs, "
+              f"{at_f['source_sample'].nunique() if 'source_sample' in at_f else '?'}"
+              f" unique analyses")
+
     print("\n--- Response curves ---")
     for col in ["h2o_at_ref", "h2o_path_mean", "dehyd_depth_km", "release_wt"]:
         response_curve(scalars, col, args.f, args.output)
@@ -648,6 +688,21 @@ def main():
     for col in ["h2o_at_ref", "h2o_path_mean", "dehyd_depth_km", "release_wt"]:
         print(f"\n  [{col}]")
         sensitivity_regression(scalars, col, args.f, args.output)
+
+    # Layer attribution: does the signal live in the upper crust, the cumulate
+    # lower crust, or both? Layer values do not depend on f.
+    print("\n--- Layer attribution (2 GPa / 600 C, unmixed layers) ---")
+    for col in ["h2o_upper_at_ref", "h2o_lower_at_ref"]:
+        print(f"\n  [{col}]")
+        sensitivity_regression(scalars, col, args.f, args.output)
+
+    # f sweep: does the Al offset scale with f (upper) or 1-f (lower)?
+    other_f = [fv for fv in f_values if not np.isclose(fv, args.f)]
+    if other_f:
+        print("\n--- f sweep of the reference-point regression ---")
+        for fv in other_f:
+            print(f"\n  [h2o_at_ref, f = {fv:.2f}]")
+            sensitivity_regression(scalars, "h2o_at_ref", fv, args.output)
 
     print("\n--- Figures ---")
     plot_response(scalars, args.f, args.output)
