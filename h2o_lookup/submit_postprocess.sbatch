@@ -16,7 +16,8 @@ BASE=/storage/home/hcoda1/7/hchoi342/scratch/Archean-OC-estimation
 cd "${BASE}"
 
 module load anaconda3
-# conda activate <your_env>    # uncomment if pandas/etc. live in a named env
+eval "$(conda shell.bash hook)"
+set +u; conda activate my_python; set -u
 export PYTHONUNBUFFERED=1
 
 echo "started : $(date)"
