@@ -41,4 +41,13 @@ python h2o_lookup/postprocess_response.py \
     --output   response_outputs \
     --terrane  Murchison
 
+echo "=== figures ==="
+python h2o_lookup/make_figures.py \
+    --manifest design_outputs/composition_manifest.csv \
+    --runs     h2o_runs/v3 \
+    --paths    design_outputs/pt_paths \
+    --scalars  response_outputs/scalars.csv \
+    --output   response_outputs/figures \
+    --f 0.35
+
 echo "finished: $(date)"
