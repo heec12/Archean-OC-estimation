@@ -26,3 +26,16 @@ design_outputs/*.png
 logs/
 .DS_Store
 perplex_sensitivity/
+# Perple_X scratch and legacy v1/v2 outputs
+perplex_scratch/
+perplex_ensemble/
+perplex_median/
+perplex_percentile/
+perplex_smoke/
+perplex_sensitivity/
+# figures and derived tables
+*.png
+*.pdf
+response_outputs/
+percentile_h2o_csv/
+median_compare/
