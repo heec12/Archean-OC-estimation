@@ -163,11 +163,60 @@ def default_slab_top_path(n=60):
     return p, t
 
 
-def load_path(path_csv):
+def load_path(path_csv, label="path"):
+    """
+    Return a dict {P, T, x} for one slab path.
+
+    x is the along-slab abscissa used to line the two layer paths up with each
+    other. TerraFERMA writes x_km (horizontal distance), which is the same
+    coordinate for every tracked horizon -- at one x the volcanic upper crust
+    and the plutonic lower crust sit at different depths, which is exactly the
+    offset we want to keep. Falls back to depth_km, then to row index.
+    """
     if path_csv is None:
-        return default_slab_top_path()
+        P, T = default_slab_top_path()
+        return {"P": P, "T": T, "x": np.arange(len(P), dtype=float),
+                "name": "placeholder"}
+
     d = pd.read_csv(path_csv)
-    return d["P_GPa"].to_numpy(), d["T_K"].to_numpy()
+    missing = [c for c in ("P_GPa", "T_K") if c not in d.columns]
+    if missing:
+        raise SystemExit(f"{path_csv}: missing column(s) {missing}; "
+                         f"found {list(d.columns)}")
+    P = d["P_GPa"].to_numpy(dtype=float)
+    T = d["T_K"].to_numpy(dtype=float)
+    if np.nanmax(T) < 150:
+        raise SystemExit(f"{path_csv}: T_K maxes at {np.nanmax(T):.1f} -- "
+                         "that looks like degC or non-dimensional, not K.")
+    for cand in ("x_km", "depth_km"):
+        if cand in d.columns:
+            x = d[cand].to_numpy(dtype=float)
+            xname = cand
+            break
+    else:
+        x = np.arange(len(P), dtype=float)
+        xname = "row index"
+
+    order = np.argsort(x)
+    print(f"  {label}: {os.path.basename(path_csv)}  n={len(P)}  "
+          f"P {P.min():.2f}-{P.max():.2f} GPa  T {T.min():.0f}-{T.max():.0f} K  "
+          f"(aligned on {xname})")
+    return {"P": P[order], "T": T[order], "x": x[order],
+            "name": os.path.basename(path_csv)}
+
+
+def profile_on(path, P, T, grid, x_ref):
+    """Sample a P-T grid along `path`, then put it on the reference abscissa."""
+    prof = sample_along_path(P, T, grid, path["P"], path["T"])
+    if np.array_equal(path["x"], x_ref):
+        return prof
+    good = np.isfinite(prof)
+    if good.sum() < 2:
+        return np.full(len(x_ref), np.nan)
+    out = np.interp(x_ref, path["x"][good], prof[good],
+                    left=np.nan, right=np.nan)
+    out[(x_ref < path["x"][good].min()) | (x_ref > path["x"][good].max())] = np.nan
+    return out
 
 
 def sample_along_path(P, T, grid, path_p, path_t):
@@ -249,10 +298,22 @@ def integrated_release(path_p, profile, window=RELEASE_WINDOW_GPA):
 # LAYER MIXING AND SCALAR TABLE
 # =============================================================================
 
-def build_scalars(runs, manifest, f_values, path_p, path_t, verbose=True):
+def build_scalars(runs, manifest, f_values, path_u, path_l=None, verbose=True):
     """
     For every pair and every f, mix the layer water fields and reduce to
     scalars. Returns a tidy DataFrame, one row per (pair_id, f).
+
+    path_u is the path the UPPER crust follows (TerraFERMA SlabMORB); path_l
+    the one the LOWER crust follows (SlabGabbro). They are different curves --
+    the plutonic layer sits several km deeper in the slab and is therefore
+    colder at the same horizontal position -- so each layer is sampled along
+    its own path and the two profiles are then put on the shared along-slab
+    abscissa before mixing. Passing only path_u reproduces the old
+    single-path behaviour.
+
+    Reductions along the path (dehydration depth, integrated release) are
+    computed on the UPPER path's pressures, so dehyd_depth_km keeps meaning
+    "depth of the upper crust when it dehydrates".
     """
     meta_cols = [c for c in manifest.columns
                  if c not in OXIDES + ["run_id", "layer"]]
@@ -260,6 +321,8 @@ def build_scalars(runs, manifest, f_values, path_p, path_t, verbose=True):
 
     records = []
     n_incomplete = 0
+    x_ref = path_u["x"]
+    path_p = path_u["P"]
 
     for pair_id, meta in pairs.iterrows():
         rid_u = f"p{pair_id:04d}_upper"
@@ -274,8 +337,8 @@ def build_scalars(runs, manifest, f_values, path_p, path_t, verbose=True):
             n_incomplete += 1
             continue
 
-        prof_u = sample_along_path(Pu, Tu, Gu, path_p, path_t)
-        prof_l = sample_along_path(Pl, Tl, Gl, path_p, path_t)
+        prof_u = profile_on(path_u, Pu, Tu, Gu, x_ref)
+        prof_l = profile_on(path_l or path_u, Pl, Tl, Gl, x_ref)
 
         for f in f_values:
             G = f * Gu + (1.0 - f) * Gl
@@ -628,7 +691,12 @@ def main():
     p.add_argument("--f-sweep", default="",
                    help="comma-separated f values, e.g. 0.20,0.35,0.50")
     p.add_argument("--path-csv", default=None,
-                   help="slab-top P-T path with columns P_GPa,T_K")
+                   help="P-T path for the UPPER crust (TerraFERMA "
+                        "pt_path_SlabMORB.csv); columns P_GPa,T_K[,x_km]")
+    p.add_argument("--path-csv-lower", default=None,
+                   help="P-T path for the LOWER crust (pt_path_SlabGabbro.csv). "
+                        "Omit to put both layers on --path-csv, which runs the "
+                        "colder plutonic layer down the warmer volcanic path.")
     p.add_argument("--terrane", default="",
                    help="restrict response curves and regressions to one "
                         "source_terrane (case-insensitive substring), e.g. "
@@ -648,17 +716,26 @@ def main():
     runs = load_runs(args.runs)
     check_coverage(runs, manifest)
 
-    path_p, path_t = load_path(args.path_csv)
+    path_u = load_path(args.path_csv, label="upper-crust path")
+    path_l = (load_path(args.path_csv_lower, label="lower-crust path")
+              if args.path_csv_lower else None)
     if args.path_csv is None:
         print("\n  NOTE: using the placeholder slab-top P-T path. Supply the "
               "\n  real path with --path-csv before trusting dehyd_depth_km.")
+    elif path_l is None:
+        print("\n  NOTE: one path for both layers -- the lower crust is being "
+              "\n  sampled along the upper crust's (warmer) path.")
+    if path_u["P"].max() < RELEASE_WINDOW_GPA[1]:
+        print(f"\n  NOTE: path tops out at {path_u['P'].max():.2f} GPa, below the "
+              f"{RELEASE_WINDOW_GPA[1]} GPa release window -- release_wt will be NaN. "
+              "\n  Narrow RELEASE_WINDOW_GPA to the path's range.")
 
     f_values = [args.f]
     if args.f_sweep:
         f_values = sorted({float(x) for x in args.f_sweep.split(",")} | {args.f})
 
     print("\n--- Mixing layers and reducing ---")
-    scalars = build_scalars(runs, manifest, f_values, path_p, path_t)
+    scalars = build_scalars(runs, manifest, f_values, path_u, path_l)
     sc_path = os.path.join(args.output, "scalars.csv")
     scalars.to_csv(sc_path, index=False)
     print(f"  Saved: {sc_path}")

@@ -27,6 +27,8 @@ echo "=== post-processing: full ensemble + f sweep ==="
 python h2o_lookup/postprocess_response.py \
     --manifest design_outputs/composition_manifest.csv \
     --runs     h2o_runs/v3 \
+    --path-csv       design_outputs/pt_paths/pt_path_SlabMORB.csv \
+    --path-csv-lower design_outputs/pt_paths/pt_path_SlabGabbro.csv \
     --output   response_outputs \
     --f-sweep  0.20,0.35,0.50
 
@@ -34,6 +36,8 @@ echo "=== post-processing: Murchison only ==="
 python h2o_lookup/postprocess_response.py \
     --manifest design_outputs/composition_manifest.csv \
     --runs     h2o_runs/v3 \
+    --path-csv       design_outputs/pt_paths/pt_path_SlabMORB.csv \
+    --path-csv-lower design_outputs/pt_paths/pt_path_SlabGabbro.csv \
     --output   response_outputs \
     --terrane  Murchison
 
