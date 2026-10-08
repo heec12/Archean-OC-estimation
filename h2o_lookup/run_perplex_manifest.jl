@@ -185,6 +185,18 @@ const SCRATCH_DIR   = OPTS["scratch"]
 # --keep-scratch true only when debugging one composition: keeping all of them
 # needs several TB.
 const KEEP_SCRATCH = lowercase(get(OPTS, "keep-scratch", "false")) in ("true", "1", "yes")
+
+# --phases true also writes phases_<run_id>.csv: one row per P-T cell per
+# phase (run_id, P_GPa, T_K, phase, wt_pct), for the assemblage-field
+# classification. Same parse of the same phase block that already produces
+# n_phases -- no second query, no re-parse of scratch, so the phase names can
+# not drift from the bound-H2O numbers they sit beside. Roughly 6x the rows of
+# the h2o table (~5 phases per cell), still small.
+const WRITE_PHASES = lowercase(get(OPTS, "phases", "false")) in ("true", "1", "yes")
+# Phases below this wt% are dropped before writing; the classifier applies its
+# own (higher) threshold, this one only keeps the file from filling with trace
+# phases at 1e-4 wt%.
+const PHASE_MIN_WT = 0.01
 const OUTPUT_DIR    = isempty(OPTS["outdir"]) ?
     joinpath(BASE, "h2o_runs", PERPLEX_VERSION) : OPTS["outdir"]
 
@@ -197,7 +209,9 @@ mkpath(SCRATCH_DIR)
 """
     parse_point(point_str)
 
-Returns (h2o_solid_wt, fluid_wt, n_phases).
+Returns (h2o_solid_wt, fluid_wt, n_phases, phases), where `phases` is a
+Vector{Tuple{String,Float64}} of (name, wt%) for every phase in the block --
+the same rows that produce n_phases, kept rather than counted and discarded.
 
 h2o_solid_wt is read from the "Solid Only" H2O wt% column of Perple_X's Bulk
 Composition block. This is the fix from the earlier pipeline: the free fluid
@@ -212,11 +226,12 @@ fluid_wt is the h2oL abundance from the phase block, used as an independent
 saturation check.
 """
 function parse_point(point_str::String)
-    isempty(strip(point_str)) && return (NaN, NaN, 0)
+    isempty(strip(point_str)) && return (NaN, NaN, 0, Tuple{String,Float64}[])
 
     h2o_solid = NaN
     fluid_wt  = 0.0
     n_phases  = 0
+    phases    = Tuple{String,Float64}[]
 
     in_phase_block = false
     in_bulk_block  = false
@@ -240,6 +255,7 @@ function parse_point(point_str::String)
                 wt = tryparse(Float64, tokens[2])
                 if wt !== nothing
                     n_phases += 1
+                    push!(phases, (String(tokens[1]), wt))
                     if tokens[1] in FLUID_PHASE_NAMES
                         fluid_wt = wt
                     end
@@ -271,7 +287,7 @@ function parse_point(point_str::String)
         end
     end
 
-    return (h2o_solid, fluid_wt, n_phases)
+    return (h2o_solid, fluid_wt, n_phases, phases)
 end
 
 # =============================================================================
@@ -285,8 +301,11 @@ end of post-processing, not an intermediate.
 function run_one(row, scratch_root::String, out_dir::String)
     run_id = String(row.run_id)
     out_path = joinpath(out_dir, "h2o_$(run_id).csv")
+    phase_path = joinpath(out_dir, "phases_$(run_id).csv")
 
-    if isfile(out_path)
+    # With --phases on, a run that already has its h2o table but no phase
+    # table is NOT skipped: the phase table is the thing being asked for.
+    if isfile(out_path) && (!WRITE_PHASES || isfile(phase_path))
         println("  [skip] $run_id already done")
         flush(stdout)
         return :skipped
@@ -322,13 +341,26 @@ function run_one(row, scratch_root::String, out_dir::String)
     end
 
     rows = NamedTuple[]
+    phase_rows = NamedTuple[]
     n_bad = 0
     for P in P_VEC, T in T_VEC
-        h2o_solid, fluid_wt, n_phases = try
+        h2o_solid, fluid_wt, n_phases, phases = try
             parse_point(perplex_query_point(scratchdir, P, T))
         catch e
             n_bad += 1
-            (NaN, NaN, 0)
+            (NaN, NaN, 0, Tuple{String,Float64}[])
+        end
+        if WRITE_PHASES
+            for (name, wt) in phases
+                wt >= PHASE_MIN_WT || continue
+                push!(phase_rows, (
+                    run_id = run_id,
+                    P_GPa  = P / 10000.0,
+                    T_K    = T,
+                    phase  = name,
+                    wt_pct = wt,
+                ))
+            end
         end
         push!(rows, (
             run_id      = run_id,
@@ -343,6 +375,13 @@ function run_one(row, scratch_root::String, out_dir::String)
 
     df = DataFrame(rows)
     CSV.write(out_path, df)
+
+    if WRITE_PHASES
+        CSV.write(phase_path, DataFrame(phase_rows))
+        @printf("  [done] %s  phase rows %d -> %s\n",
+                run_id, length(phase_rows), basename(phase_path))
+        flush(stdout)
+    end
 
     # Delete the Perple_X working directory once the table is safely written.
     #
@@ -396,6 +435,7 @@ println("  solutions    : ", replace(strip(SOLUTION_PHASES), "\n" => ", "))
 flush(stdout)
 
 println("  keep scratch : $KEEP_SCRATCH")
+println("  write phases : $WRITE_PHASES")
 
 # Preflight. Measured size of one 8-component, 40x40 Perple_X scratch dir is
 # about 11 MB (v1 ensemble on Phoenix), so budget ~15 MB per run. With cleanup

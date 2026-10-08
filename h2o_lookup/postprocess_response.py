@@ -201,8 +201,69 @@ def load_path(path_csv, label="path"):
     print(f"  {label}: {os.path.basename(path_csv)}  n={len(P)}  "
           f"P {P.min():.2f}-{P.max():.2f} GPa  T {T.min():.0f}-{T.max():.0f} K  "
           f"(aligned on {xname})")
-    return {"P": P[order], "T": T[order], "x": x[order],
-            "name": os.path.basename(path_csv)}
+    out = {"P": P[order], "T": T[order], "x": x[order], "xname": xname,
+           "name": os.path.basename(path_csv)}
+    if {"x_km", "y_km"} <= set(d.columns):
+        out["xy"] = d[["x_km", "y_km"]].to_numpy(dtype=float)[order]
+    if "depth_km" in d.columns:
+        out["depth"] = d["depth_km"].to_numpy(dtype=float)[order]
+    return out
+
+
+def align_on_surface(path, surf, label="path"):
+    """
+    Re-key a layer path on along-slab arc length of the slab SURFACE.
+
+    Why not x_km: at one horizontal position, a point 4 km below the slab top
+    in the slab-normal direction is NOT under the same piece of slab surface
+    -- on a 45 deg dip it is offset ~2.8 km in x, more where the slab steepens.
+    TerraFERMA writes each horizon as the slab-normal projection of the
+    surface, so the right key is "which surface point is this rock beneath",
+    i.e. the foot of the perpendicular onto the surface polyline.
+
+    Adds path["s"] (arc length of the foot point, km) and path["normal_km"]
+    (distance to the surface), and sets path["x"] = s.
+    """
+    A = surf["xy"][:-1]
+    B = surf["xy"][1:]
+    AB = B - A
+    L = np.hypot(AB[:, 0], AB[:, 1])
+    s0 = np.concatenate([[0.0], np.cumsum(L)])
+    q = path["xy"]
+    # foot of perpendicular onto every segment, keep the nearest
+    t = np.einsum("nsk,sk->ns", q[:, None, :] - A[None], AB) / (L ** 2)
+    t = np.clip(t, 0.0, 1.0)
+    foot = A[None] + t[..., None] * AB[None]
+    d = np.hypot(*(q[:, None, :] - foot).transpose(2, 0, 1))
+    k = np.argmin(d, axis=1)
+    idx = np.arange(len(q))
+    s = s0[k] + t[idx, k] * L[k]
+    normal = d[idx, k]
+
+    order = np.argsort(s)
+    for key in ("P", "T", "xy", "depth"):
+        if key in path:
+            path[key] = path[key][order]
+    path["s"] = s[order]
+    path["x"] = s[order]
+    path["normal_km"] = normal[order]
+    path["xname"] = "slab-surface arc length"
+    print(f"  {label}: {normal.min():.2f}-{normal.max():.2f} km below the slab "
+          f"surface (median {np.median(normal):.2f}); "
+          f"surface arc {s.min():.1f}-{s.max():.1f} km")
+    if np.ptp(normal) > 0.5:
+        print(f"  WARNING: {label} is not a constant distance below the surface "
+              f"-- check that the files come from the same model run.")
+    return path
+
+
+def surface_reference(surf):
+    """Surface path keyed on its own arc length."""
+    AB = np.diff(surf["xy"], axis=0)
+    surf["s"] = np.concatenate([[0.0], np.cumsum(np.hypot(AB[:, 0], AB[:, 1]))])
+    surf["x"] = surf["s"]
+    surf["xname"] = "slab-surface arc length"
+    return surf
 
 
 def profile_on(path, P, T, grid, x_ref):
@@ -298,7 +359,8 @@ def integrated_release(path_p, profile, window=RELEASE_WINDOW_GPA):
 # LAYER MIXING AND SCALAR TABLE
 # =============================================================================
 
-def build_scalars(runs, manifest, f_values, path_u, path_l=None, verbose=True):
+def build_scalars(runs, manifest, f_values, path_u, path_l=None, path_ref=None,
+                  verbose=True):
     """
     For every pair and every f, mix the layer water fields and reduce to
     scalars. Returns a tidy DataFrame, one row per (pair_id, f).
@@ -314,6 +376,14 @@ def build_scalars(runs, manifest, f_values, path_u, path_l=None, verbose=True):
     Reductions along the path (dehydration depth, integrated release) are
     computed on the UPPER path's pressures, so dehyd_depth_km keeps meaning
     "depth of the upper crust when it dehydrates".
+
+    With path_ref (the TerraFERMA SlabSurface path, after align_on_surface has
+    re-keyed the layer paths on its arc length), both layer profiles are put on
+    the SURFACE abscissa, so the mix at each point is the whole crustal column
+    beneath one piece of slab top. Release and dehydration are then read on
+    the surface's pressure, and dehyd_depth_km is the slab-surface depth from
+    the path file itself (depth_km) rather than P x 30.9. That is the depth at
+    which fluid leaves the slab, which is what TerraFERMA needs.
     """
     meta_cols = [c for c in manifest.columns
                  if c not in OXIDES + ["run_id", "layer"]]
@@ -321,8 +391,11 @@ def build_scalars(runs, manifest, f_values, path_u, path_l=None, verbose=True):
 
     records = []
     n_incomplete = 0
-    x_ref = path_u["x"]
-    path_p = path_u["P"]
+    ref = path_ref if path_ref is not None else path_u
+    x_ref = ref["x"]
+    path_p = ref["P"]
+    ref_depth = ref.get("depth") if path_ref is not None else None
+    reported = False
 
     for pair_id, meta in pairs.iterrows():
         rid_u = f"p{pair_id:04d}_upper"
@@ -340,9 +413,27 @@ def build_scalars(runs, manifest, f_values, path_u, path_l=None, verbose=True):
         prof_u = profile_on(path_u, Pu, Tu, Gu, x_ref)
         prof_l = profile_on(path_l or path_u, Pl, Tl, Gl, x_ref)
 
+        if verbose and not reported:
+            # where along the reference path do the Perple_X grids have values?
+            for nm, pr in (("upper", prof_u), ("lower", prof_l)):
+                ok = np.isfinite(pr)
+                if ok.any():
+                    print(f"  {nm} profile defined at {ok.sum()}/{len(pr)} path "
+                          f"points, ref P {path_p[ok].min():.2f}-"
+                          f"{path_p[ok].max():.2f} GPa")
+                else:
+                    print(f"  {nm} profile: NO path point falls inside the "
+                          f"P-T grid")
+            reported = True
+
         for f in f_values:
             G = f * Gu + (1.0 - f) * Gl
             prof = f * prof_u + (1.0 - f) * prof_l
+
+            dP = dehydration_depth(path_p, prof)
+            dz = (float(np.interp(dP, path_p, ref_depth))
+                  if ref_depth is not None and np.isfinite(dP)
+                  else dP * GPA_TO_KM)
 
             rec = {c: meta[c] for c in meta_cols if c in meta.index}
             rec.update({
@@ -353,7 +444,8 @@ def build_scalars(runs, manifest, f_values, path_u, path_l=None, verbose=True):
                 "h2o_path_mean": float(np.nanmean(prof)),
                 "h2o_path_shallow": float(np.nanmax(prof[:max(3, len(prof) // 5)]))
                                      if np.any(~np.isnan(prof)) else np.nan,
-                "dehyd_P_GPa": dehydration_depth(path_p, prof),
+                "dehyd_P_GPa": dP,
+                "dehyd_depth_km": dz,
                 "release_wt": integrated_release(path_p, prof),
                 # layer-resolved, useful for attributing the signal
                 "h2o_upper_at_ref": value_at(Pu, Tu, Gu, REF_P_GPA, REF_T_K),
@@ -365,7 +457,6 @@ def build_scalars(runs, manifest, f_values, path_u, path_l=None, verbose=True):
             records.append(rec)
 
     df = pd.DataFrame(records)
-    df["dehyd_depth_km"] = df["dehyd_P_GPa"] * GPA_TO_KM
 
     if verbose:
         print(f"  scalars built for {df['pair_id'].nunique()} pairs "
@@ -697,6 +788,11 @@ def main():
                    help="P-T path for the LOWER crust (pt_path_SlabGabbro.csv). "
                         "Omit to put both layers on --path-csv, which runs the "
                         "colder plutonic layer down the warmer volcanic path.")
+    p.add_argument("--path-csv-surface", default=None,
+                   help="slab-top path (pt_path_SlabSurface.csv, needs x_km,y_km). "
+                        "With it, the layer paths are aligned by slab-normal "
+                        "projection onto the surface instead of by x_km, and "
+                        "dehydration depth / release are read on the surface.")
     p.add_argument("--terrane", default="",
                    help="restrict response curves and regressions to one "
                         "source_terrane (case-insensitive substring), e.g. "
@@ -719,14 +815,28 @@ def main():
     path_u = load_path(args.path_csv, label="upper-crust path")
     path_l = (load_path(args.path_csv_lower, label="lower-crust path")
               if args.path_csv_lower else None)
+    path_ref = None
+    if args.path_csv_surface:
+        path_ref = load_path(args.path_csv_surface, label="slab-surface path")
+        need = [pp for pp in (path_ref, path_u, path_l)
+                if pp is not None and "xy" not in pp]
+        if need:
+            raise SystemExit("--path-csv-surface needs x_km,y_km in all path "
+                             f"files; missing in {[pp['name'] for pp in need]}")
+        print("\n  Aligning layer paths on the slab surface:")
+        path_ref = surface_reference(path_ref)
+        path_u = align_on_surface(path_u, path_ref, label="upper-crust path")
+        if path_l is not None:
+            path_l = align_on_surface(path_l, path_ref, label="lower-crust path")
     if args.path_csv is None:
         print("\n  NOTE: using the placeholder slab-top P-T path. Supply the "
               "\n  real path with --path-csv before trusting dehyd_depth_km.")
     elif path_l is None:
         print("\n  NOTE: one path for both layers -- the lower crust is being "
               "\n  sampled along the upper crust's (warmer) path.")
-    if path_u["P"].max() < RELEASE_WINDOW_GPA[1]:
-        print(f"\n  NOTE: path tops out at {path_u['P'].max():.2f} GPa, below the "
+    ref_P = (path_ref or path_u)["P"]
+    if ref_P.max() < RELEASE_WINDOW_GPA[1]:
+        print(f"\n  NOTE: path tops out at {ref_P.max():.2f} GPa, below the "
               f"{RELEASE_WINDOW_GPA[1]} GPa release window -- release_wt will be NaN. "
               "\n  Narrow RELEASE_WINDOW_GPA to the path's range.")
 
@@ -735,7 +845,7 @@ def main():
         f_values = sorted({float(x) for x in args.f_sweep.split(",")} | {args.f})
 
     print("\n--- Mixing layers and reducing ---")
-    scalars = build_scalars(runs, manifest, f_values, path_u, path_l)
+    scalars = build_scalars(runs, manifest, f_values, path_u, path_l, path_ref)
     sc_path = os.path.join(args.output, "scalars.csv")
     scalars.to_csv(sc_path, index=False)
     print(f"  Saved: {sc_path}")
