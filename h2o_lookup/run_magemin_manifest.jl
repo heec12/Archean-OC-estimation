@@ -70,7 +70,7 @@
 #         --paths design_outputs/pt_paths --outdir h2o_runs/v4
 #
 #   options:  --pilot true      only rows flagged pilot (6 pairs)
-#             --scenario v4a    only rows used by one scenario (v4a | v4b | v4)
+#             --scenario v4a    only rows used by one scenario (v4a | v4b | v4c)
 #             --db ume          only rows for one database
 #             --grid false      paths only (fast; skip the lookup grid)
 #             --rows 1:10       explicit manifest row range (1-based)
@@ -232,10 +232,19 @@ end
 const DBS = Dict{String,Any}()
 const RM_LISTS = Dict{String,Any}()
 
+# Minimum MAGEMin_C version per database. Older versions do not error on an
+# unknown database: Initialize_MAGEMin prints "Database not implemented...
+# using default mp" and silently runs the METAPELITE set instead.
+const MIN_VERSION = Dict("all" => v"2.4.0")
+
 function magemin_db(key::String)
     haskey(DBS, key) && return DBS[key]
     s = DB_SETTINGS[key]
     db = s.db
+    need = get(MIN_VERSION, db, v"0.0.0")
+    pkgversion(MAGEMin_C) >= need || error(
+        "[$key] database `$db` needs MAGEMin_C >= $need (installed: " *
+        "$(pkgversion(MAGEMin_C))). Update MAGEMin_C (see Methodology Updates.md).")
     data = s.dataset === nothing ?
         Initialize_MAGEMin(db, verbose = false, mbCpx = s.mbCpx) :
         Initialize_MAGEMin(db, verbose = false, mbCpx = s.mbCpx, dataset = s.dataset)

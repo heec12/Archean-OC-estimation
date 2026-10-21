@@ -31,8 +31,14 @@ What it does
        z10/z50/z90   depths (km) by which 10/50/90% of its release is done
    which is the "how much from mineral X, at what depth, what share of the
    budget" form Palin asked for.
-3. Crust profile: upper (path_upper) and lower (path_lower) are mixed AFTER
-   the phase equilibria, on the anhydrous basis, at common depths:
+Depths: every depth in the outputs is SLAB-SURFACE depth -- the depth of
+the slab surface above the rock at the same slab position, not the depth of
+the rock's own horizon (the gabbro sits ~7 km deeper). The original is kept
+as depth_own_km in the per-run tables. Needs --path-dir.
+
+3. Crust profile: upper (path_upper, default SlabMORB as in v3) and lower
+   (path_lower) are mixed AFTER the phase equilibria, on the anhydrous basis,
+   at the same slab position (same slab-surface depth):
        H2O_crust(z) = f * H2O_upper(z) + (1 - f) * H2O_lower(z)
    f is swept (it costs nothing here).
 
@@ -51,7 +57,7 @@ Usage
 -----
     python postprocess_v4.py --manifest design_outputs/composition_manifest_v4.csv \
         --runs h2o_runs/v4 --output response_v4 \
-        --path-upper SlabSurface --path-lower SlabGabbro --f 0.2 0.3 0.4 0.5
+        --path-upper SlabMORB --path-lower SlabGabbro --f 0.2 0.3 0.4 0.5
 """
 
 import argparse
@@ -66,7 +72,7 @@ import pandas as pd
 SCENARIOS = {
     "v4a": dict(upper="all-v3like_k0", lower="all-v3like_k0", check=None),
     "v4b": dict(upper="mb_kmorb",      lower="mb_kmorb",      check=None),
-    "v4":  dict(upper="mb_kmorb",      lower="ume_kmorb",     check="ig_kmorb"),
+    "v4c": dict(upper="mb_kmorb",      lower="ume_kmorb",     check="ig_kmorb"),
 }
 
 # `ig` (Green et al. 2025, after Holland et al. 2018) is calibrated for
@@ -81,12 +87,87 @@ HYDROUS_MIN = 0.05          # g/100 g: phases holding less than this and releasi
 # -----------------------------------------------------------------------------
 # I/O
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Slab-surface depth
+#
+# Each P-T path file gives the depth of its OWN horizon. At one slab position
+# the gabbro horizon sits ~7 km below the slab surface, so comparing or mixing
+# layers at equal own-depth would combine different pieces of slab. Every depth
+# in the outputs is therefore re-keyed to the depth of the slab SURFACE above
+# that rock: the foot of the perpendicular from each path point onto the
+# surface polyline (same alignment as v3's postprocess_response.py).
+#
+# Naming convention: a path's surface is found by replacing its suffix
+# (MORB, Gabbro, Moho, ...) with "Surface", e.g. SlabGabbro -> SlabSurface,
+# ArcheanSlabGabbro -> ArcheanSlabSurface.
+# -----------------------------------------------------------------------------
+SURFACE_SUFFIXES = ("Gabbro", "MORB", "Moho", "Mantle")
+
+
+def _surface_name(path):
+    for suf in SURFACE_SUFFIXES:
+        if path.endswith(suf):
+            return path[: -len(suf)] + "Surface"
+    return None
+
+
+def build_depth_maps(path_dir):
+    """{path name: (own depth_km, slab-surface depth_km)} for every path file."""
+    maps = {}
+    if not path_dir or not os.path.isdir(path_dir):
+        print(f"  WARNING: no path directory {path_dir!r}; depths stay on each path's own horizon")
+        return maps
+    paths = {f[len("pt_path_"):-4]: pd.read_csv(os.path.join(path_dir, f))
+             for f in os.listdir(path_dir) if f.startswith("pt_path_") and f.endswith(".csv")}
+    for name, d in paths.items():
+        own = d.depth_km.to_numpy(float)
+        if name.endswith("Surface"):
+            maps[name] = (own, own)
+            continue
+        sname = _surface_name(name)
+        if sname not in paths or not {"x_km", "y_km"} <= set(d.columns):
+            print(f"  WARNING: no surface path for {name}; its depths stay on its own horizon")
+            continue
+        sf = paths[sname]
+        A = sf[["x_km", "y_km"]].to_numpy(float)
+        seg = np.diff(A, axis=0)
+        L = np.hypot(seg[:, 0], seg[:, 1])
+        s0 = np.concatenate([[0.0], np.cumsum(L)])
+        q = d[["x_km", "y_km"]].to_numpy(float)
+        t = np.einsum("nsk,sk->ns", q[:, None, :] - A[None, :-1], seg) / L ** 2
+        t = np.clip(t, 0.0, 1.0)
+        foot = A[None, :-1] + t[..., None] * seg[None]
+        dist = np.hypot(*(q[:, None, :] - foot).transpose(2, 0, 1))
+        k = dist.argmin(axis=1)
+        s_foot = s0[k] + t[np.arange(len(q)), k] * L[k]
+        zs = np.interp(s_foot, s0, sf.depth_km.to_numpy(float))
+        order = np.argsort(own)
+        maps[name] = (own[order], zs[order])
+    return maps
+
+
+DEPTH_MAPS = {}
+
+
+def _to_slab_depth(df):
+    """Replace depth_km of path rows with slab-surface depth; keep the original."""
+    if "depth_km" not in df or df.empty:
+        return df
+    df = df.copy()
+    df["depth_own_km"] = df["depth_km"]
+    for name, (own, zs) in DEPTH_MAPS.items():
+        m = (df["kind"] == "path") & (df["path"] == name)
+        if m.any():
+            df.loc[m, "depth_km"] = np.interp(df.loc[m, "depth_km"], own, zs)
+    return df
+
+
 def load_run(runs, run_id):
     fp = os.path.join(runs, f"pts_{run_id}.csv")
     fh = os.path.join(runs, f"phases_{run_id}.csv")
     if not (os.path.isfile(fp) and os.path.isfile(fh)):
         return None, None
-    return pd.read_csv(fp), pd.read_csv(fh)
+    return _to_slab_depth(pd.read_csv(fp)), _to_slab_depth(pd.read_csv(fh))
 
 
 def valid_mask(pts):
@@ -200,7 +281,10 @@ def main():
     ap.add_argument("--manifest", required=True)
     ap.add_argument("--runs", required=True)
     ap.add_argument("--output", default="response_v4")
-    ap.add_argument("--path-upper", default="SlabSurface")
+    ap.add_argument("--path-dir", default=os.path.join("design_outputs", "pt_paths"),
+                    help="P-T path files (needed to put every depth on the slab-surface depth)")
+    ap.add_argument("--path-upper", default="SlabMORB",
+                    help="path for the upper crust (v3 used SlabMORB)")
     ap.add_argument("--path-lower", default="SlabGabbro")
     ap.add_argument("--f", type=float, nargs="+", default=[0.2, 0.3, 0.4, 0.5],
                     help="upper-crust mass fraction(s)")
@@ -216,6 +300,9 @@ def main():
     os.makedirs(a.output, exist_ok=True)
 
     m = pd.read_csv(a.manifest)
+    DEPTH_MAPS.update(build_depth_maps(a.path_dir))
+    if DEPTH_MAPS:
+        print("depths re-keyed to slab-surface depth for: " + ", ".join(sorted(DEPTH_MAPS)))
 
     # ---- 1+2: release accounting for every run that exists ------------------
     rel_all, step_all = [], []
@@ -245,7 +332,7 @@ def main():
         st["donors"] = st["donors"].astype(str)
         st.to_csv(os.path.join(a.output, "release_steps.csv"), index=False)
 
-    # ---- 3: per scenario: lower ume vs ig (v4 only), crust mixing, summary ----
+    # ---- 3: per scenario: lower ume vs ig (v4c only), crust mixing, summary ----
     zmax = max(p[p.kind == "path"].depth_km.max() for p, _ in cache.values())
     z = np.arange(0.0, zmax + a.dz, a.dz)
     comp_rows, prof_rows, summ_rows = [], [], []
@@ -276,7 +363,7 @@ def main():
             lo = cache.get(rid["lower"])
             ck = cache.get(rid["check"]) if rid["check"] else None
 
-            # lower crust primary vs check db (v4: ume vs ig), every shared path
+            # lower crust primary vs check db (v4c: ume vs ig), every shared path
             if lo is not None and ck is not None:
                 for path in sorted(lo[0].loc[lo[0].kind == "path", "path"].unique()):
                     hu, _, _ = profile(lo[0], path, z)

@@ -44,8 +44,11 @@ echo "started     : $(date)"
 # "Package StatGeochem not found in current path".
 #
 # Precompile interactively before submitting:
-#     julia --project=. -e 'using Pkg; Pkg.add("MAGEMin_C"); using MAGEMin_C'
-#     julia --project=. h2o_lookup/check_magemin_setup.jl
+#     julia --project=envs/v4 -e 'using Pkg; Pkg.add(["CSV","DataFrames"]); Pkg.add(name="MAGEMin_C", version="2.4.1"); using MAGEMin_C'
+#     julia --project=envs/v4 h2o_lookup/check_magemin_setup.jl
+# v4 uses its OWN environment (envs/v4), not the repo-root one: the root env
+# carries StatGeochem/Plots for v3, whose compat bounds probably held MAGEMin_C
+# back at 2.0.5, which has no `all` database. Needs MAGEMin_C >= 2.4.0.
 # The first precompile would otherwise happen inside the first array task,
 # where it looks indistinguishable from a hang. The check script must print OK
 # for all three reference points before you submit.
@@ -63,7 +66,7 @@ command -v julia >/dev/null || { echo "ERROR: julia not on PATH after module loa
 echo "julia       : $(julia --version)  ($(command -v julia))"
 module list 2>&1 | sed 's/^/  module: /'
 
-stdbuf -oL -eL julia --project="${BASE}" \
+stdbuf -oL -eL julia --project="${BASE}/envs/v4" \
     --threads "${SLURM_CPUS_PER_TASK}" \
     "${SCRIPT}" \
     --manifest "${MANIFEST}" \

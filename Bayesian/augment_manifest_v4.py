@@ -24,7 +24,7 @@ database assignment:
                v4a  `all` database, v3-like phase list, ds62, NCFMAST
                     (K2O = 0, Fe3+ = 0): closest replica of v3 in MAGEMin
                v4b  `mb` (Green et al. 2016) for both layers
-               v4   `mb` upper; `ume` lower (Evans & Frost 2021 + G16
+               v4c  `mb` upper; `ume` lower (Evans & Frost 2021 + G16
                     amp/aug) as PRIMARY, `ig` (Green et al. 2025) as check.
                     The stitch rule (ume up to antigorite-out, ig beyond) is
                     applied in post-processing, never here.
@@ -74,23 +74,23 @@ PILOT_MGO_BINS = (0, 2, 5)
 #   v4b  `mb` for BOTH layers, Fe3+/sumFe = 0.1, K2O MORB-like
 #        -> self-consistent G16 set + Fe3+ + K. NB: mb has no antigorite,
 #           brucite or talc, so the cumulate lower crust is expected to come
-#           out too dry; that is the point of the comparison with v4.
-#   v4   `mb` upper, `ume` lower (+ `ig` check), Fe3+ 0.1, K2O MORB-like
+#           out too dry; that is the point of the comparison with v4c.
+#   v4c  `mb` upper, `ume` lower (+ `ig` check), Fe3+ 0.1, K2O MORB-like
 #
 # Each run row is unique; `scenarios` lists every scenario that uses it
-# (v4 and v4b share the upper-crust mb runs).
+# (v4b and v4c share the upper-crust mb runs).
 #
 # (layer, db, phase_set, k2o tag, fe3 ratio or None for --fe3) -> scenarios
 # -----------------------------------------------------------------------------
 RUN_PLAN = [
     ("upper", "all", "v3like",  "k0", 0.0,  ["v4a"]),
     ("lower", "all", "v3like",  "k0", 0.0,  ["v4a"]),
-    ("upper", "mb",  "default", "kmorb", None, ["v4b", "v4"]),
+    ("upper", "mb",  "default", "kmorb", None, ["v4b", "v4c"]),
     ("lower", "mb",  "default", "kmorb", None, ["v4b"]),
-    ("lower", "ume", "default", "kmorb", None, ["v4"]),
-    ("lower", "ig",  "default", "kmorb", None, ["v4"]),
+    ("lower", "ume", "default", "kmorb", None, ["v4c"]),
+    ("lower", "ig",  "default", "kmorb", None, ["v4c"]),
 ]
-# K2O sensitivity (pilot pairs only), on the v4 databases that have K2O
+# K2O sensitivity (pilot pairs only), on the v4c databases that have K2O
 K2O_SENS_DBS = {"upper": ["mb"], "lower": ["ig"]}
 
 M_FEO = 71.844
