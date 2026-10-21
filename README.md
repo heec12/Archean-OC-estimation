@@ -124,7 +124,7 @@ mkdir -p logs                           # SLURM needs this before the job starts
 sbatch h2o_lookup/submit_magemin_array.sbatch
 ```
 
-The job is 16 array tasks × 8 threads covering 612 runs (all three scenarios, plus K₂O sensitivity runs on the 6 pilot pairs).
+**The job is 16 array tasks × 8 threads covering 612 runs (all three scenarios, plus K₂O sensitivity runs on the 6 pilot pairs).**
 
 To monitor it:
 
